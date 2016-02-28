@@ -71,7 +71,7 @@ bot.on('text', function (msg) {
 									if (err) {
 										bot.sendMessage(msg.chat.id, "Se ha producido un error al insertar en la tabla.");
 										console.log(err);
-									} else {
+									} else { 
 										//creamos el nombre
 										var name = msg.from.first_name;
 										if(typeof msg.from.last_name != "undefined") name += " "+msg.from.last_name;
@@ -82,7 +82,7 @@ bot.on('text', function (msg) {
 												console.log(err);
 											} else {
 												//Y se le notifica por privado
-												setTimeout(function(){bot.sendMessage(msg.chat.id, name+" se ha unido a la partida");, 1000);
+												setTimeout(function(){bot.sendMessage(msg.chat.id, name+" se ha unido a la partida");}, 1000);
 												bot.sendMessage(msg.from.id, "Te has unido a la partida.");
 											}
 											db.close();
