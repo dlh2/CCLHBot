@@ -45,49 +45,52 @@ function getMax(array){
 	var res = Math.max.apply(Math,array.map(function(o){return o.votes;}));
 	return array.filter(function(o){ return o.votes == res; });
 }
-function nuevaRonda(db, result, result2, result3, result4){
-	if (result[0].points+1 == result2[0].num_cardstowin){
-		bot.sendMessage(result3[0].user_id, "Has ganado la partida.");
-		bot.sendMessage(result2[0].room_id, result4[0].username+" ha ganado la partida.");
+function nuevaRonda(db, game_id, room_id, cardstowin, winner_id, winner_username, winner_points){
+	if (winner_points+1 == cardstowin){
+		bot.sendMessage(winner_id, "Has ganado la partida.");
+		bot.sendMessage(room_id, winner_username+" ha ganado la partida.");
 		//Borramos la partida
-		db.collection('games').deleteOne({room_id: result2[0].room_id}, function(err, result5) {
+		db.collection('games').deleteOne({room_id: room_id}, function(err, result5) {
 			if (err) {
-				bot.sendMessage(msg.chat.id, "Se ha producido un error al borrar en la tabla.");
+				bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
 				console.log(err);
 			} else {
 				if (result5.result.ok == 1) {
 					//Si se ha borrado correctamente borramos tambien los jugadores que estuvieran inscritos en ella.
-					db.collection('playersxgame').remove({game_id: result[0].game_id}, function(err, result6) {
+					db.collection('playersxgame').remove({game_id: game_id}, function(err, result6) {
 						if (err) {
-							bot.sendMessage(msg.chat.id, "Se ha producido un error al borrar en la tabla.");
+							bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
 							console.log(err);
 						} else {
-							db.collection('cardsxgame').remove({game_id: result[0].game_id}, function(err, result7) {
+							db.collection('cardsxgame').remove({game_id: game_id}, function(err, result7) {
 								if (err) {
-									bot.sendMessage(msg.chat.id, "Se ha producido un error al borrar en la tabla.");
+									bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
 									console.log(err);
 								} else {
 									//Y enviamos el resultado por el grupo.
-									if (result7.result.ok != 1) bot.sendMessage(msg.chat.id, "Se ha producido un error al borrar en la tabla.");
+									if (result7.result.ok != 1) bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
 								}
 								db.close();
 							});
 						}
 					});
-				} else bot.sendMessage(msg.chat.id, "Se ha producido un error al borrar en la tabla.");
+				} else bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
 			}
 		});
-	} else if (result[0].points+1 < result2[0].num_cardstowin) {
-		db.collection('playersxgame').updateOne({user_id: result3[0].user_id}, {$set: { "points": (parseInt(result4[0].points)+1)}}, function(err, result5) {
+	} else if (winner_points+1 < cardstowin) {
+		db.collection('playersxgame').updateOne({user_id: winner_id}, {$set: { "points": (parseInt(winner_points)+1)}}, function(err, result5) {
 			if (err) {
-				bot.sendMessage(msg.chat.id, "Se ha producido un error al borrar en la tabla.");
+				bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
 				console.log(err);
 			} else {
 				//Si nada ha ido correctamente
-				if (result5.result.ok != 1) bot.sendMessage(msg.chat.id, "Error inesperado.");
+				if (result5.result.ok != 1) bot.sendMessage(room_id, "Error inesperado.");
+				else {
+					//ToDo: pasar de ronda
+				}
 			}
 		});
-	} else bot.sendMessage(msg.chat.id, "Error inesperado.");
+	} else bot.sendMessage(room_id, "Error inesperado.");
 }
 
 //////////////////////////////EVENTOS//////////////////////////////
@@ -406,13 +409,13 @@ bot.on('text', function (msg) {
 																if (msg.chat.id == result2[0].creator_id){
 																	bot.sendMessage(result3[0].user_id, "Has ganado la ronda con tu carta: \n"+res[2]);
 																	bot.sendMessage(result2[0].room_id, result4[0].username+" ha ganado la ronda con su carta: \n"+res[2]);
-																	nuevaRonda(db, result, result2, result3, result4);
+																	nuevaRonda(db, result2[0].game_id, result2[0].room_id, result2[0].num_cardstowin, result4[0].user_id, result4[0].username, result4[0].points);
 																} else bot.sendMessage(msg.chat.id, "Solo el creador puede votar.");
 															} else if (result2[0].type=="clasico"){
 																if (msg.chat.id == result2[0].dictator_id){
 																	bot.sendMessage(result3[0].user_id, "Has ganado la ronda con tu carta: \n"+res[2]);
 																	bot.sendMessage(result2[0].room_id, result4[0].username+" ha ganado la ronda con su carta: \n"+res[2]);
-																	nuevaRonda(db, result, result2, result3, result4);
+																	nuevaRonda(db, result2[0].game_id, result2[0].room_id, result2[0].num_cardstowin, result4[0].user_id, result4[0].username, result4[0].points);
 																} else bot.sendMessage(msg.chat.id, "Solo el dictador puede votar.");
 															} else if (result2[0].type="democracia"){
 																db.collection('cardsxgame').updateOne({_id: parseInt(res[1])}, {$set: { "votes": (parseInt(result3[0].votes)+1)}}, function(err, result5) {
@@ -434,9 +437,9 @@ bot.on('text', function (msg) {
 																								bot.sendMessage(msg.chat.id, "Se ha producido un error al buscar en la tabla.");
 																								console.log(err);
 																							} else if (result7.length) { 
-																								bot.sendMessage(card.user_id, "Has ganado la ronda con tu carta: \n"+card.card);
+																								bot.sendMessage(result7[0].user_id, "Has ganado la ronda con tu carta: \n"+card.card);
 																								bot.sendMessage(result2[0].room_id, result7[0].username+" ha ganado la ronda con su carta: \n"+card.card);
-																								nuevaRonda(db, result, result2, result3, result4);
+																								nuevaRonda(db, result2[0].game_id, result2[0].room_id, result2[0].num_cardstowin, result7[0].user_id, result7[0].username, result7[0].points);
 																							} else bot.sendMessage(msg.chat.id, "Error inesperado de usuario.");
 																						});
 																					}
