@@ -45,52 +45,107 @@ function getMax(array){
 	var res = Math.max.apply(Math,array.map(function(o){return o.votes;}));
 	return array.filter(function(o){ return o.votes == res; });
 }
-function nuevaRonda(db, game_id, room_id, cardstowin, winner_id, winner_username, winner_points){
-	if (winner_points+1 == cardstowin){
-		bot.sendMessage(winner_id, "Has ganado la partida.");
-		bot.sendMessage(room_id, winner_username+" ha ganado la partida.");
+function nuevaRonda(db, game, winner_id, winner_username, winner_points){
+	if (winner_points+1 == game.num_cardstowin){
+		setTimeout(function(){bot.sendMessage(winner_id, "Has ganado la partida.");}, 300);
+		setTimeout(function(){bot.sendMessage(game.room_id, winner_username+" ha ganado la partida.");}, 300);
 		//Borramos la partida
-		db.collection('games').deleteOne({room_id: room_id}, function(err, result5) {
+		db.collection('games').deleteOne({room_id: game.room_id}, function(err, result5) {
 			if (err) {
-				bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
+				bot.sendMessage(game.room_id, "Se ha producido un error al borrar en la tabla.");
 				console.log(err);
 			} else {
 				if (result5.result.ok == 1) {
 					//Si se ha borrado correctamente borramos tambien los jugadores que estuvieran inscritos en ella.
-					db.collection('playersxgame').remove({game_id: game_id}, function(err, result6) {
+					db.collection('playersxgame').remove({game_id: game.game_id}, function(err, result6) {
 						if (err) {
-							bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
+							bot.sendMessage(game.room_id, "Se ha producido un error al borrar en la tabla.");
 							console.log(err);
 						} else {
-							db.collection('cardsxgame').remove({game_id: game_id}, function(err, result7) {
+							db.collection('cardsxgame').remove({game_id: game.game_id}, function(err, result7) {
 								if (err) {
-									bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
+									bot.sendMessage(game.room_id, "Se ha producido un error al borrar en la tabla.");
 									console.log(err);
 								} else {
 									//Y enviamos el resultado por el grupo.
-									if (result7.result.ok != 1) bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
+									if (result7.result.ok != 1) bot.sendMessage(game.room_id, "Se ha producido un error al borrar en la tabla.");
 								}
 								db.close();
 							});
 						}
 					});
-				} else bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
+				} else bot.sendMessage(game.room_id, "Se ha producido un error al borrar en la tabla.");
 			}
 		});
-	} else if (winner_points+1 < cardstowin) {
+	} else if (winner_points+1 < game.num_cardstowin) {
 		db.collection('playersxgame').updateOne({user_id: winner_id}, {$set: { "points": (parseInt(winner_points)+1)}}, function(err, result5) {
 			if (err) {
-				bot.sendMessage(room_id, "Se ha producido un error al borrar en la tabla.");
+				bot.sendMessage(game.room_id, "Se ha producido un error al borrar en la tabla.");
 				console.log(err);
 			} else {
 				//Si nada ha ido correctamente
-				if (result5.result.ok != 1) bot.sendMessage(room_id, "Error inesperado.");
+				if (result5.result.ok != 1) bot.sendMessage(game.room_id, "Error inesperado.");
 				else {
-					//ToDo: pasar de ronda
+					db.collection('cardsxgame').remove({game_id: game.game_id}, function(err, result7) {
+						if (err) {
+							bot.sendMessage(game.room_id, "Se ha producido un error al borrar en la tabla.");
+							console.log(err);
+						} else {
+							//Y enviamos el resultado por el grupo.
+							if (result7.result.ok != 1) bot.sendMessage(game.room_id, "Se ha producido un error al borrar en la tabla.");
+							else {
+								db.collection('games').updateOne({"room_id" : game.room_id},
+									{$set: {"currentblack": (parseInt(game.currentblack)+1)}}, function(err, result8) {
+										if (err) {
+											bot.sendMessage(game.room_id, "Se ha producido un error al modificar la tabla.");
+											console.log(err);
+										} else {
+											if (result8.result.ok == 1){
+												db.collection('playersxgame').find({game_id: game.game_id}).toArray(function (err, result9) {
+													if (err) {
+														bot.sendMessage(game.room_id, "Se ha producido un error al buscar en la tabla.");
+														console.log(err);
+													} else {
+														//En caso de que se haya podido actualizar correctamente se envia esta carta al grupo y a todos los miembros
+														bot.sendMessage(game.room_id, game.blackcards[game.currentblack]);
+														for (i = 0; i < result9.length; i++){
+															var buttonarray = [];
+															var cardstext = "";
+																for (j = 0; j < 5;j+=2){
+																	if (j < 4) buttonarray.push(["/"+j+" "+result9[i].cards[j], "/"+(j+1)+" "+result9[i].cards[j+1]]);
+																	else buttonarray.push(["/"+j+" "+result9[i].cards[j]]);
+																	cardstext += j+". "+result9[i].cards[j]+"\n";
+																	if (j < 4) cardstext += (j+1)+". "+result9[i].cards[j+1]+"\n";
+																}
+																var opts = {
+																  reply_markup: JSON.stringify({
+																	keyboard: buttonarray,
+																	one_time_keyboard: true
+																  })
+																};
+															//Y ademas se envian las otras cartas con un teclado para elegir la opcion deseada a los miembros
+															if (game.type=="dictadura"){
+																if (result9[i].user_id != game.creator_id) bot.sendMessage(result9[i].user_id, game.blackcards[game.currentblack]+"\nElige una opcion:\n "+cardstext, opts);
+															} else if (game.type=="clasico"){
+																if (result9[i].user_id != game.dictator_id) bot.sendMessage(result9[i].user_id, game.blackcards[game.currentblack]+"\nElige una opcion:\n "+cardstext, opts);
+																//ToDo: Se cambia de dictador
+															} else if (game.type=="democracia"){
+																bot.sendMessage(result9[i].user_id, game.blackcards[game.currentblack]+"\nElige una opcion:\n "+cardstext, opts);
+															} else bot.sendMessage(game.room_id, "Error inesperado en el tipo.");
+														}
+														db.close();
+													}
+												});
+											} else bot.sendMessage(game.room_id, "Se ha producido un error al modificar la tabla.");
+										}
+								});
+							}
+						}
+					});
 				}
 			}
 		});
-	} else bot.sendMessage(room_id, "Error inesperado.");
+	} else bot.sendMessage(game.room_id, "Error inesperado.");
 }
 
 //////////////////////////////EVENTOS//////////////////////////////
@@ -103,8 +158,8 @@ bot.on('text', function (msg) {
 			//\s(dictadura|clasico|democracia)
 			//numero_de_players-> \s([2-9])
 			//numero_de_rondas-> \s([1-5])
-			if (/^\/create(?:@cclhbot)?\s(dictadura|clasico|democracia)\s([2-9])/i.test(msg.text)) {
-				res = msg.text.match(/^\/create(?:@cclhbot)?\s(dictadura|clasico|democracia)\s([2-9])/i);
+			if (/^\/create(?:@cclhbot)?\s(dictadura|democracia)\s([2-9])\s([1-5])/i.test(msg.text)) {
+				res = msg.text.match(/^\/create(?:@cclhbot)?\s(dictadura|democracia)\s([2-9])\s([1-5])/i);
 				//Conectamos con la BD
 				MongoClient.connect(privatedata.url, function (err, db) {
 					if (err) bot.sendMessage(msg.chat.id, "No se ha podido conectar a la base de datos");
@@ -127,7 +182,7 @@ bot.on('text', function (msg) {
 											//En caso de que no exista se crea la partida
 											whitecardsarray = shuffle(whitecards.list);
 											blackcardsarray = shuffle(blackcards.list);
-											db.collection('games').insertOne({game_id: base_36, room_id: msg.chat.id, creator_id: msg.from.id, dictator_id: msg.from.id, type: res[1], num_participants: res[2], num_cardstowin: 1/*res[3]*/, whitecards: whitecardsarray, blackcards: blackcardsarray, currentblack: 0}, function (err, result2) {
+											db.collection('games').insertOne({game_id: base_36, room_id: msg.chat.id, creator_id: msg.from.id, dictator_id: msg.from.id, type: res[1], num_participants: res[2], num_cardstowin: res[3], whitecards: whitecardsarray, blackcards: blackcardsarray, currentblack: 0}, function (err, result2) {
 												if (err) {
 													bot.sendMessage(msg.chat.id, "Se ha producido un error al insertar en la tabla.");
 													console.log(err);
@@ -409,13 +464,13 @@ bot.on('text', function (msg) {
 																if (msg.chat.id == result2[0].creator_id){
 																	bot.sendMessage(result3[0].user_id, "Has ganado la ronda con tu carta: \n"+res[2]);
 																	bot.sendMessage(result2[0].room_id, result4[0].username+" ha ganado la ronda con su carta: \n"+res[2]);
-																	nuevaRonda(db, result2[0].game_id, result2[0].room_id, result2[0].num_cardstowin, result4[0].user_id, result4[0].username, result4[0].points);
+																	nuevaRonda(db, result2[0], result4[0].user_id, result4[0].username, result4[0].points);
 																} else bot.sendMessage(msg.chat.id, "Solo el creador puede votar.");
 															} else if (result2[0].type=="clasico"){
 																if (msg.chat.id == result2[0].dictator_id){
 																	bot.sendMessage(result3[0].user_id, "Has ganado la ronda con tu carta: \n"+res[2]);
 																	bot.sendMessage(result2[0].room_id, result4[0].username+" ha ganado la ronda con su carta: \n"+res[2]);
-																	nuevaRonda(db, result2[0].game_id, result2[0].room_id, result2[0].num_cardstowin, result4[0].user_id, result4[0].username, result4[0].points);
+																	nuevaRonda(db, result2[0], result4[0].user_id, result4[0].username, result4[0].points);
 																} else bot.sendMessage(msg.chat.id, "Solo el dictador puede votar.");
 															} else if (result2[0].type="democracia"){
 																db.collection('cardsxgame').updateOne({_id: parseInt(res[1])}, {$set: { "votes": (parseInt(result3[0].votes)+1)}}, function(err, result5) {
@@ -439,7 +494,7 @@ bot.on('text', function (msg) {
 																							} else if (result7.length) { 
 																								bot.sendMessage(result7[0].user_id, "Has ganado la ronda con tu carta: \n"+card.card);
 																								bot.sendMessage(result2[0].room_id, result7[0].username+" ha ganado la ronda con su carta: \n"+card.card);
-																								nuevaRonda(db, result2[0].game_id, result2[0].room_id, result2[0].num_cardstowin, result7[0].user_id, result7[0].username, result7[0].points);
+																								nuevaRonda(db, result2[0], result7[0].user_id, result7[0].username, result7[0].points);
 																							} else bot.sendMessage(msg.chat.id, "Error inesperado de usuario.");
 																						});
 																					}
@@ -465,8 +520,8 @@ bot.on('text', function (msg) {
 			bot.sendMessage(msg.chat.id, "Versión 0.2. Creado por @themarioga");
 		} else {
 			//En caso de que este enviando una carta blanca
-			if (/^\/([0-9])(.*)/i.test(msg.text)) {
-				res = msg.text.match(/^\/([0-9])(.*)/i);
+			if (/^\/([0-9])\s(.*)/i.test(msg.text)) {
+				res = msg.text.match(/^\/([0-9])\s(.*)/i);
 				var opts = {
 				  reply_markup: JSON.stringify({
 					hide_keyboard: true
@@ -532,7 +587,7 @@ bot.on('text', function (msg) {
 																								var array = [];
 																								//Creamos el array con los votos
 																								for (i = 0; i<result3.length; i++){
-																									textgroup += (i+1)+result3[i].card+"\n";
+																									textgroup += (i+1)+". "+result3[i].card+"\n";
 																									array.push(["/vote_"+result3[i]._id+" "+result3[i].card]);
 																								}
 																								var opts2 = {
