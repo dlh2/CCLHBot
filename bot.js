@@ -377,12 +377,37 @@ bot.on('text', function (msg) {
 		//Si el parametro es /join pedimos al usuario que lo envie por privado
 		} else if (msg.text.indexOf("/join") == 0){
 			bot.sendMessage(msg.chat.id, "Por favor enviame ese comando por privado.");
+		} else if (msg.text.indexOf("/help") == 0){
+			bot.sendMessage(msg.chat.id, 
+				"Bienvenido a la ayuda del juego Cartas Contra la Humanidad, el bot para telegram.\n"+
+				"Puedes ver de que trata, y como jugar aqui: http://cartascontralahumanidad.com/reglas/ \n"+
+				"o un ejemplo practico en este video (en ingles): https://www.youtube.com/watch?v=sw3HXyICwAU \n"+
+				"Para esta version en concreto (bot de telegram), el juego se realiza a traves de comandos, son los siguientes: \n"+
+				"/create dictadura|clasico|democracia numero_de_jugadores numero_de_cartas_para_ganar \n"+
+				"Este comando permite crear una partida, debe escribirse en un grupo, pueden jugar entre 2 y 9 jugadores, y puede haber entre 1 y 5 rondas, "+
+				"un ejemplo de como usarlo seria /create dictadura 5 4 \n"+
+				"Una vez creada el bot nos pedira que nos unamos a la partida, para ello genera un codigo que debemos pasarle por privado "+
+				"(abriendo una conversacion privada con el), este comando es... \n"+
+				"/join codigo_de_la_partida \n"+
+				"Este comando nos permite unirnos a una partida ya creada, debe enviarse por privado, un ejemplo de uso seria /join xyz \n"+
+				"Una vez se haya unido el numero de jugadores especificado en /create el creador puede iniciar la partida con el comando..."+
+				"/startgame \n"+
+				"Este comando, escrito por un grupo inicia una partida en la que ya han entrado todos los jugadores, el bot elije una carta negra y reparte cartas blancas a los jugadores. "+
+				"Cuando todo el mundo haya recibido sus cartas por privado, puede proceder a votarlas haciendo click en los botones con opciones que aparecen. \n"+
+				"Una vez que todos hayan elegido carta el lider votara por la opcion que mas le guste "+
+				"en caso de que sea dictadura (el creador vota siempre) o clasico (en cada ronda hay 1 dictador).\n"+
+				"En caso de que sea democracia todos los jugadores podran votar a su opcion favorita y la mas votada ganara la ronda,"+
+				"en caso de empate se elegira aleatoriamente entre las mas votadas.\n"+
+				"El ganador de la ronda recibira un punto.\n"+
+				"Cuando los puntos de un jugador igualen el numero_de_cartas_para_ganar elegido en el el comando /create habra ganado la partida.\n\n"+
+				"Disfrutad y... ¡A jugar!"
+			);
 		} else if (msg.text.indexOf("/version") == 0){
 			bot.sendMessage(msg.chat.id, "Versión 0.3. Creado por @themarioga");
 		}
 	} else { //detectamos si el mensaje recibido es por privado
 		//Si el parametro es /startgame ha dado permisos al bot para hablarle por privado
-		if (msg.text.indexOf("/startgame") == 0){
+		if (msg.text.indexOf("/start") == 0){
 			bot.sendMessage(msg.chat.id, "Gracias por unirte al juego de Cartas contra la humanidad para telegram!");
 		}
 		//Si el parametro es /create pedir que se envie por el grupo
