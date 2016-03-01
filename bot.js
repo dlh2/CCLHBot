@@ -5,6 +5,7 @@ var autoIncrement = require("mongodb-autoincrement");
 var whitecards = require('./whitecards');
 var blackcards = require('./blackcards');
 var privatedata = require('./privatedata');
+var emoji = require('node-emoji').emoji;
 //Iniciamos el bot y mongodb
 var bot = new TelegramBot(privatedata.token, {polling: true});
 var MongoClient = mongodb.MongoClient;
@@ -76,8 +77,8 @@ function repartirCartas(game, players, excluded_id){
 }
 function nuevaRonda(db, game, winner_id, winner_username, winner_points){
 	if (winner_points+1 == game.num_cardstowin){
-		setTimeout(function(){bot.sendMessage(winner_id, "Has ganado la partida.");}, 300);
-		setTimeout(function(){bot.sendMessage(game.room_id, winner_username+" ha ganado la partida.");}, 300);
+		setTimeout(function(){bot.sendMessage(winner_id, emoji.confetti_ball+" Has ganado la partida. "+emoji.confetti_ball);}, 300);
+		setTimeout(function(){bot.sendMessage(game.room_id, winner_username+" ha ganado la partida. "+emoji.confetti_ball+" "+emoji.confetti_ball);}, 300);
 		//Borramos la partida
 		db.collection('games').deleteOne({room_id: game.room_id}, function(err, result5) {
 			if (err) {
@@ -136,7 +137,7 @@ function nuevaRonda(db, game, winner_id, winner_username, winner_points){
 														console.log(err);
 													} else {
 														if (game.type=="dictadura"){
-															repartirCartas(game, result9, game.creator_id);
+															setTimeout(function() {repartirCartas(game, result9, game.creator_id);}, 300);
 														} else if (game.type=="clasico"){
 															var dictador = 0;
 															if (parseInt(game.dictator_id)+1 < result9.length)dictador = parseInt(game.dictator_id)+1;
@@ -155,7 +156,7 @@ function nuevaRonda(db, game, winner_id, winner_username, winner_points){
 																				console.log(err);
 																			} else {
 																				if (result11.result.ok == 1){
-																					repartirCartas(game, result9, result10[0].user_id);
+																					setTimeout(function() {repartirCartas(game, result9, result10[0].user_id);}, 300);
 																				} else bot.sendMessage(game.room_id, "Se ha producido un error al modificar tabla.");
 																			}
 																			db.close();
@@ -164,7 +165,7 @@ function nuevaRonda(db, game, winner_id, winner_username, winner_points){
 																}
 															});
 														} else if (game.type=="democracia"){
-															repartirCartas(game, result9);
+															setTimeout(function() {repartirCartas(game, result9);}, 300);
 														} else bot.sendMessage(game.room_id, "Error inesperado en el tipo.");
 													}
 												});
@@ -300,10 +301,10 @@ bot.on('text', function (msg) {
 				});
 			} else bot.sendMessage(msg.chat.id, "Sintaxis incorrecta. Puedes escribir el comando /help para obtener informacion sobre los parametros.");
 		}
-		//Si el parametro es /start...
-		else if (msg.text.indexOf("/start") == 0){
+		//Si el parametro es /startgame...
+		else if (msg.text.indexOf("/startgame") == 0){
 			//Con 0 parametros
-			if (/^\/start(?:@cclhbot)?/i.test(msg.text)) {
+			if (/^\/startgame(?:@cclhbot)?/i.test(msg.text)) {
 				//Conectamos con la BD
 				MongoClient.connect(privatedata.url, function (err, db) {
 					if (err) bot.sendMessage(msg.chat.id, "No se ha podido conectar a la base de datos");
@@ -377,11 +378,11 @@ bot.on('text', function (msg) {
 		} else if (msg.text.indexOf("/join") == 0){
 			bot.sendMessage(msg.chat.id, "Por favor enviame ese comando por privado.");
 		} else if (msg.text.indexOf("/version") == 0){
-			bot.sendMessage(msg.chat.id, "Versión 0.2. Creado por @themarioga");
+			bot.sendMessage(msg.chat.id, "Versión 0.3. Creado por @themarioga");
 		}
 	} else { //detectamos si el mensaje recibido es por privado
-		//Si el parametro es /start ha dado permisos al bot para hablarle por privado
-		if (msg.text.indexOf("/start") == 0){
+		//Si el parametro es /startgame ha dado permisos al bot para hablarle por privado
+		if (msg.text.indexOf("/startgame") == 0){
 			bot.sendMessage(msg.chat.id, "Gracias por unirte al juego de Cartas contra la humanidad para telegram!");
 		}
 		//Si el parametro es /create pedir que se envie por el grupo
@@ -390,10 +391,6 @@ bot.on('text', function (msg) {
 		}
 		//Si el parametro es /delete pedir que se envie por el grupo
 		if (msg.text.indexOf("/delete") == 0){
-			bot.sendMessage(msg.chat.id, "Por favor envia este comando por el grupo");
-		}
-		//Si el parametro es /delete pedir que se envie por el grupo
-		if (msg.text.indexOf("/start") == 0){
 			bot.sendMessage(msg.chat.id, "Por favor envia este comando por el grupo");
 		}
 		//Si el parametro es /join...
@@ -494,14 +491,14 @@ bot.on('text', function (msg) {
 															bot.sendMessage(msg.chat.id, "Has votado: "+res[2], opts);
 															if (result2[0].type=="dictadura"){
 																if (msg.chat.id == result2[0].creator_id){
-																	bot.sendMessage(result3[0].user_id, "Has ganado la ronda con tu carta: \n"+res[2]);
-																	bot.sendMessage(result2[0].room_id, result4[0].username+" ha ganado la ronda con su carta: \n"+res[2]);
+																	bot.sendMessage(result3[0].user_id, "Has ganado la ronda con tu carta: \n"+res[2]+". Tienes "+(result4[0].points+1)+" puntos.");
+																	bot.sendMessage(result2[0].room_id, result4[0].username+" ha ganado la ronda con su carta: \n"+res[2]+". Tienes "+(result4[0].points+1)+" puntos.");
 																	nuevaRonda(db, result2[0], result4[0].user_id, result4[0].username, result4[0].points);
 																} else bot.sendMessage(msg.chat.id, "Solo el creador puede votar.");
 															} else if (result2[0].type=="clasico"){
 																if (msg.chat.id == result2[0].dictator_uid){
-																	bot.sendMessage(result3[0].user_id, "Has ganado la ronda con tu carta: \n"+res[2]);
-																	bot.sendMessage(result2[0].room_id, result4[0].username+" ha ganado la ronda con su carta: \n"+res[2]);
+																	bot.sendMessage(result3[0].user_id, "Has ganado la ronda con tu carta: \n"+res[2]+". Tienes "+(result4[0].points+1)+" puntos.");
+																	bot.sendMessage(result2[0].room_id, result4[0].username+" ha ganado la ronda con su carta: \n"+res[2]+". Tienes "+(result4[0].points+1)+" puntos.");
 																	nuevaRonda(db, result2[0], result4[0].user_id, result4[0].username, result4[0].points);
 																} else bot.sendMessage(msg.chat.id, "Solo el dictador puede votar.");
 															} else if (result2[0].type="democracia"){
@@ -524,8 +521,8 @@ bot.on('text', function (msg) {
 																								bot.sendMessage(msg.chat.id, "Se ha producido un error al buscar en la tabla.");
 																								console.log(err);
 																							} else if (result7.length) { 
-																								bot.sendMessage(result7[0].user_id, "Has ganado la ronda con tu carta: \n"+card.card);
-																								bot.sendMessage(result2[0].room_id, result7[0].username+" ha ganado la ronda con su carta: \n"+card.card);
+																								bot.sendMessage(result7[0].user_id, "Has ganado la ronda con tu carta: \n"+card.card+". Tienes "+(result7[0].points+1)+" puntos.");
+																								bot.sendMessage(result2[0].room_id, result7[0].username+" ha ganado la ronda con su carta: \n"+card.card+". Tiene "+(result7[0].points+1)+" puntos.");
 																								nuevaRonda(db, result2[0], result7[0].user_id, result7[0].username, result7[0].points);
 																							} else bot.sendMessage(msg.chat.id, "Error inesperado de usuario.");
 																						});
@@ -549,7 +546,7 @@ bot.on('text', function (msg) {
 				});
 			}
 		} else if (msg.text.indexOf("/version") == 0){
-			bot.sendMessage(msg.chat.id, "Versión 0.2. Creado por @themarioga");
+			bot.sendMessage(msg.chat.id, "Versión 0.3. Creado por @themarioga");
 		} else {
 			//En caso de que este enviando una carta blanca
 			if (/^\/([0-9])\s(.*)/i.test(msg.text)) {
@@ -628,20 +625,22 @@ bot.on('text', function (msg) {
 																									one_time_keyboard: true
 																								  })
 																								};
-																								//Segun el tipo de partida hace una cosa u otra
-																								if (result2[0].type == "dictadura"){//Dictadura solo vota el lider
-																									textgroup = "Estas son las opciones, el lider votara por privado: \n"+textgroup;
-																									bot.sendMessage(result2[0].creator_id, "Debes votar una de estas opciones: ", opts2);
-																								} else if (result2[0].type == "clasico") {//Clasico solo vota el lider de esa ronda
-																									textgroup = "Estas son las opciones, el lider de esta ronda votara por privado: \n"+textgroup;
-																									bot.sendMessage(result2[0].dictator_uid, "Debes votar una de estas opciones: ", opts2);
-																								} else if (result2[0].type == "democracia"){//Democracia votan todos
-																									textgroup = "Ahora podeis votar por privado entre las siguientes cartas: \n"+textgroup;
-																									for (i = 0; i<result3.length; i++){
-																										bot.sendMessage(result3[i].user_id, "Debes votar una de estas opciones: ", opts2);
-																									}
-																								} else bot.sendMessage(msg.chat.id, "Ha ocurrido un error inesperado.");
-																								bot.sendMessage(result2[0].room_id, textgroup);
+																								setTimeout(function (){
+																									//Segun el tipo de partida hace una cosa u otra
+																									if (result2[0].type == "dictadura"){//Dictadura solo vota el lider
+																										textgroup = result2[0].blackcards[result2[0].currentblack-1]+"\nEstas son las opciones, el lider votara por privado: \n"+textgroup;
+																										bot.sendMessage(result2[0].creator_id, result2[0].blackcards[result2[0].currentblack-1]+"\nDebes votar una de estas opciones: ", opts2);
+																									} else if (result2[0].type == "clasico") {//Clasico solo vota el lider de esa ronda
+																										textgroup = result2[0].blackcards[result2[0].currentblack-1]+"\nEstas son las opciones, el lider de esta ronda votara por privado: \n"+textgroup;
+																										bot.sendMessage(result2[0].dictator_uid, result2[0].blackcards[result2[0].currentblack-1]+"\nDebes votar una de estas opciones: ", opts2);
+																									} else if (result2[0].type == "democracia"){//Democracia votan todos
+																										textgroup = result2[0].blackcards[result2[0].currentblack-1]+"\nAhora podeis votar por privado entre las siguientes cartas: \n"+textgroup;
+																										for (i = 0; i<result3.length; i++){
+																											bot.sendMessage(result3[i].user_id, result2[0].blackcards[result2[0].currentblack-1]+"\nDebes votar una de estas opciones: ", opts2);
+																										}
+																									} else bot.sendMessage(msg.chat.id, "Ha ocurrido un error inesperado.");
+																									bot.sendMessage(result2[0].room_id, textgroup);
+																								}, 300);
 																							} else bot.sendMessage(msg.chat.id, "Ha ocurrido un error inesperado. Referencia: #"+(result3.length+1)+"-"+result2[0].num_participants);
 																						} else bot.sendMessage(msg.chat.id, "Ha ocurrido un error inesperado.");
 																					}
