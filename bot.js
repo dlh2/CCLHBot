@@ -401,10 +401,10 @@ bot.on('text', function (msg) {
 												console.log(err);
 											} else {
 												var texto = "";
-												for (i=0; i<result3.length;i++){
+												for (i=0; i<result2.length;i++){
 													existe = false;
-													for (j=0; j<result2.length;j++){
-														if (result3[i].user_id != result2[i].user_id) existe = true;
+													for (j=0; j<result3.length;j++){
+														if (result2[i].user_id != result3[j].user_id) existe = true;
 													}
 													if (!existe) texto += result2[i].username+"\n";
 													existe = false;
