@@ -184,7 +184,7 @@ method.nextRound = function (r_game, r_players, room_id) {
 									if (dictator.length){
 										g_object.bot.sendMessage(r_players[i].user_id, "El lider de esta ronda es: "+dictator[0].username);
 										if (r_players[i].user_id != dictator[0].user_id) g_object.bot.sendMessage(r_players[i].user_id, bcard[0].card_text+"\nElige una opcion:\n "+cardstext, opts);	
-									} else g_object.bot.sendMessage(room_id, "Error inesperado.");
+									} else g_object.bot.sendMessage(room_id, "Error inesperado en modo clasico.");
 								});
 							} else if (r_game.type=="democracia"){
 								g_object.bot.sendMessage(r_players[i].user_id, bcard[0].card_text+"\nElige una opcion:\n "+cardstext, opts);
@@ -205,9 +205,9 @@ method.createGame = function(data, room_id, callback){
 		} else {
 			g_object.find('whitecards', {dictionary: data.dictionary}, room_id, function (array){
 				array = shuffleArray(array).slice(0, data.n_players*45);
-				g_object.sortFind('wcardsxgame', {}, {"_id": -1}, 1, room_id, function (data){
-					if (!data.length) id = 1;
-					else id = data[0]._id+1;
+				g_object.sortFind('wcardsxgame', {}, {"_id": -1}, 1, room_id, function (lastcard){
+					if (!lastcard.length) id = 1;
+					else id = lastcard[0]._id+1;
 					for (i = 0, j = 0; i < array.length; i++, j++){
 						if (j == 45) j = 0;
 						array[i]._id = id + i; 
@@ -225,9 +225,9 @@ method.createGame = function(data, room_id, callback){
 			});
 			g_object.find('blackcards', {dictionary: data.dictionary}, room_id, function (array){
 				array = shuffleArray(array).slice(0, data.n_players*45);
-				g_object.sortFind('bcardsxgame', {}, {"_id": -1}, 1, room_id, function (data){
-					if (!data.length) id = 1;
-					else id = data[0]._id+1;
+				g_object.sortFind('bcardsxgame', {}, {"_id": -1}, 1, room_id, function (lastcard){
+					if (!lastcard.length) id = 1;
+					else id = lastcard[0]._id+1;
 					for (i = 0, j = 0; i < array.length; i++, j++){
 						if (j == 45) j = 0;
 						array[i]._id = id + i;
