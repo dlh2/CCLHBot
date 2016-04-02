@@ -100,7 +100,7 @@ MongoClient.connect(privatedata.url, function (err, db) {
 									} else bot.sendMessage(msg.chat.id, "Aun no se ha llenado la partida. "+r_players.length+" de "+r_game[0].n_players+" participantes");
 								});
 							} else bot.sendMessage(msg.chat.id, "La partida ya esta iniciada.");
-						} else bot.sendMessage(msg.chat.id, "Solo el creador "+r_game[0].creator_name+" puede borrar la partida.");
+						} else bot.sendMessage(msg.chat.id, "Solo el creador "+r_game[0].creator_name+" puede iniciar la partida.");
 					} else bot.sendMessage(msg.chat.id, "Este grupo no tiene partidas activas.");
 				});
 			} else bot.sendMessage(msg.chat.id, "Por favor envia este comando por un grupo.");
@@ -295,9 +295,9 @@ MongoClient.connect(privatedata.url, function (err, db) {
 														autoIncrement.getNextSequence(db, 'cardsxround', '_id', function (err, autoIndex) {
 															game.insert('cardsxround', {_id: autoIndex, game_id: r_game[0].game_id, user_id: msg.from.id, card_text:match[2], votes: 0}, msg.chat.id, function(){
 																var opts = {
-																  reply_markup: JSON.stringify({
-																	hide_keyboard: true
-																  })
+																	reply_markup: JSON.stringify({
+																		hide_keyboard: true
+																	})
 																};
 																bot.sendMessage(msg.chat.id, "Has elegido: "+match[2], opts);
 																game.remove('wcardsxgame', {cxpxg_id: parseInt(match[1]), game_id: r_game[0].game_id, player_id: r_player[0].player_id}, msg.chat.id, function (){
@@ -378,7 +378,7 @@ MongoClient.connect(privatedata.url, function (err, db) {
 														game.find('cardsxround', {game_id: r_game[0].game_id}, msg.chat.id, function(n_cards){
 															if (n_cards == r_game[0].n_players-1){
 																game.update('games', {game_id: r_game[0].game_id}, { "n_players": (parseInt(r_game[0].n_players)-1)}, msg.chat.id, function (){
-																	game.remove('players', {user_id: msg.from.id}, room_id, function (){
+																	game.remove('players', {user_id: msg.from.id}, msg.chat.id, function (){
 																		bot.sendMessage(msg.chat.id, r_player[0].username+" ha abandonado la partida.");
 																	});
 																});
@@ -386,7 +386,7 @@ MongoClient.connect(privatedata.url, function (err, db) {
 														});
 													}
 												} else { //Partida sin iniciar
-													game.remove('players', {user_id: msg.from.id}, room_id, function (){
+													game.remove('players', {user_id: msg.from.id}, msg.chat.id, function (){
 														bot.sendMessage(msg.chat.id, r_player[0].username+" ha abandonado la partida.");
 													});
 												}

@@ -160,37 +160,39 @@ method.nextRound = function (r_game, r_players, room_id) {
 	var g_object = this;
 	g_object.update('games', {game_id: r_game.game_id}, {"currentblack": (parseInt(r_game.currentblack)+1) }, room_id, function () {
 		g_object.limitFind('bcardsxgame', {cxg_id: (parseInt(r_game.currentblack)+1), game_id: r_game.game_id}, 1, room_id, function (bcard){
-			g_object.bot.sendMessage(room_id, "La carta negra de esta ronda es: \n"+bcard[0].card_text);
-			for (i = 0; i < r_players.length; i++){
-				(function(i) {
-					g_object.limitFind('wcardsxgame', {player_id: r_players[i].player_id, game_id: r_game.game_id}, 5, room_id, function (wcard){
-						var buttonarray = [];
-						var cardstext = "";
-						for (j = 0; j < wcard.length;j++){
-							buttonarray.push(["/"+wcard[j].cxpxg_id+" "+wcard[j].card_text]);
-							cardstext += (j+1)+". "+wcard[j].card_text+"\n";
-						}
-						var opts = {
-							reply_markup: JSON.stringify({
-								keyboard: buttonarray,
-								one_time_keyboard: true
-							})
-						};
-						if (r_game.type=="dictadura"){
-							if (r_players[i].user_id != r_game.creator_id) g_object.bot.sendMessage(r_players[i].user_id, bcard[0].card_text+"\nElige una opcion:\n "+cardstext, opts);
-						} else if (r_game.type=="clasico"){
-							g_object.find('players', {player_id: r_game.dictator_id}, room_id, function(dictator){
-								if (dictator.length){
-									g_object.bot.sendMessage(r_players[i].user_id, "El lider de esta ronda es: "+dictator[0].username);
-									if (r_players[i].user_id != dictator[0].user_id) g_object.bot.sendMessage(r_players[i].user_id, bcard[0].card_text+"\nElige una opcion:\n "+cardstext, opts);	
-								} else g_object.bot.sendMessage(room_id, "Error inesperado.");
-							});
-						} else if (r_game.type=="democracia"){
-							g_object.bot.sendMessage(r_players[i].user_id, bcard[0].card_text+"\nElige una opcion:\n "+cardstext, opts);
-						} else g_object.bot.sendMessage(room_id, "Error inesperado en el tipo.");
-					});
-				})(i);
-			}
+			if (bcard.length){
+				g_object.bot.sendMessage(room_id, "La carta negra de esta ronda es: \n"+bcard[0].card_text);
+				for (i = 0; i < r_players.length; i++){
+					(function(i) {
+						g_object.limitFind('wcardsxgame', {player_id: r_players[i].player_id, game_id: r_game.game_id}, 5, room_id, function (wcard){
+							var buttonarray = [];
+							var cardstext = "";
+							for (j = 0; j < wcard.length;j++){
+								buttonarray.push(["/"+wcard[j].cxpxg_id+" "+wcard[j].card_text]);
+								cardstext += (j+1)+". "+wcard[j].card_text+"\n";
+							}
+							var opts = {
+								reply_markup: JSON.stringify({
+									keyboard: buttonarray,
+									one_time_keyboard: true
+								})
+							};
+							if (r_game.type=="dictadura"){
+								if (r_players[i].user_id != r_game.creator_id) g_object.bot.sendMessage(r_players[i].user_id, bcard[0].card_text+"\nElige una opcion:\n "+cardstext, opts);
+							} else if (r_game.type=="clasico"){
+								g_object.find('players', {player_id: r_game.dictator_id}, room_id, function(dictator){
+									if (dictator.length){
+										g_object.bot.sendMessage(r_players[i].user_id, "El lider de esta ronda es: "+dictator[0].username);
+										if (r_players[i].user_id != dictator[0].user_id) g_object.bot.sendMessage(r_players[i].user_id, bcard[0].card_text+"\nElige una opcion:\n "+cardstext, opts);	
+									} else g_object.bot.sendMessage(room_id, "Error inesperado.");
+								});
+							} else if (r_game.type=="democracia"){
+								g_object.bot.sendMessage(r_players[i].user_id, bcard[0].card_text+"\nElige una opcion:\n "+cardstext, opts);
+							} else g_object.bot.sendMessage(room_id, "Error inesperado en el tipo.");
+						});
+					})(i);
+				}
+			} else g_object.bot.sendMessage(room_id, "Error inesperado.");
 		});
 	});
 };
@@ -203,31 +205,41 @@ method.createGame = function(data, room_id, callback){
 		} else {
 			g_object.find('whitecards', {dictionary: data.dictionary}, room_id, function (array){
 				array = shuffleArray(array).slice(0, data.n_players*45);
-				for (i = 0, j = 0; i < array.length; i++, j++){
-					if (j == 45) j = 0;
-					array[i].game_id = data.game_id;
-					array[i].cxpxg_id = j;
-					array[i].player_id = Math.round(i/45)+1;
-				}
-				g_object.db.collection('wcardsxgame').insertMany(array, function (err, r){
-					if (err) {
-						g_object.bot.sendMessage(room_id, "Se ha producido un error al insertar en la tabla 'wcardsxgame'.");
-						console.log(err);
+				g_object.sortFind('wcardsxgame', {}, {"_id": -1}, 1, room_id, function (data){
+					if (!data.length) id = 1;
+					else id = data[0]._id+1;
+					for (i = 0, j = 0; i < array.length; i++, j++){
+						if (j == 45) j = 0;
+						array[i]._id = id + i; 
+						array[i].game_id = data.game_id;
+						array[i].cxpxg_id = j;
+						array[i].player_id = Math.round(i/45)+1;
 					}
+					g_object.db.collection('wcardsxgame').insertMany(array, function (err, r){
+						if (err) {
+							g_object.bot.sendMessage(room_id, "Se ha producido un error al insertar en la tabla 'wcardsxgame'.");
+							console.log(err);
+						}
+					});
 				});
 			});
 			g_object.find('blackcards', {dictionary: data.dictionary}, room_id, function (array){
 				array = shuffleArray(array).slice(0, data.n_players*45);
-				for (i = 0, j = 0; i < array.length; i++, j++){
-					if (j == 45) j = 0;
-					array[i].game_id = data.game_id;
-					array[i].cxg_id = j;
-				}
-				g_object.db.collection('bcardsxgame').insertMany(array, function (err, r){
-					if (err) {
-						g_object.bot.sendMessage(room_id, "Se ha producido un error al insertar en la tabla 'bcardsxgame'.");
-						console.log(err);
+				g_object.sortFind('bcardsxgame', {}, {"_id": -1}, 1, room_id, function (data){
+					if (!data.length) id = 1;
+					else id = data[0]._id+1;
+					for (i = 0, j = 0; i < array.length; i++, j++){
+						if (j == 45) j = 0;
+						array[i]._id = id + i;
+						array[i].game_id = data.game_id;
+						array[i].cxg_id = j;
 					}
+					g_object.db.collection('bcardsxgame').insertMany(array, function (err, r){
+						if (err) {
+							g_object.bot.sendMessage(room_id, "Se ha producido un error al insertar en la tabla 'bcardsxgame'.");
+							console.log(err);
+						}
+					});
 				});
 			});
 			callback();
