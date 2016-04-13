@@ -203,6 +203,7 @@ method.createGame = function(data, room_id, callback){
 			g_object.bot.sendMessage(room_id, "Se ha producido un error al insertar en la tabla 'games'.");
 			console.log(err);
 		} else {
+			console.log ("{dictionary: "+data.dictionary+"}");
 			g_object.find('whitecards', {dictionary: data.dictionary}, room_id, function (array){
 				array = shuffleArray(array).slice(0, data.n_players*45);
 				g_object.sortFind('wcardsxgame', {}, {"_id": -1}, 1, room_id, function (lastcard){
