@@ -1,89 +1,31 @@
-//ToDo: menos spam usando el editar mensaje de la API2.0
-//Cargamos los modulos necesarios y las bases de datos de cartas
+//Cargamos los modulos necesarios
 var TelegramBot = require('node-telegram-bot-api');
 var privatedata = require('./privatedata');
-var Cclhbot = require('./game');
+var GameBot = require('./game');
 var emoji = require('node-emoji').emoji;
 
 //Iniciamos el bot y mongodb
 var bot = new TelegramBot(privatedata.token, {polling: true});
 
 //Iniciamos el Bot
-var game = new Cclhbot(privatedata.url, function (res){
+var game = new GameBot(privatedata.url, function (res){
 	if (res.status == "ERR") {
 		console.error('No se ha podido conectar a la base de datos');
 		return;
 	}
 	//////////////////////////////EVENTOS//////////////////////////////
-	//Si el comando es /create y sus parametros son:
-	//tipo_de_partida-> (dictadura|clasico|democracia)
-	//numero_de_players-> ([2-9])
-	//numero_de_rondas-> ([1-5])
-	bot.onText(/^\/create(?:@cclhbot)?\s(dictadura|clasico|democracia)\s([2-9])\s([1-9])(?:\s(.*))?/, function (msg, match) {	
+	//Si el comando es /start (por privado):
+	bot.onText(new RegExp("^\\/start(?:@"+privatedata.botalias+")?", "i"), function (msg, match) {	
 		//Detectamos si el mensaje recibido es por un grupo
-		if (msg.chat.type == "private") {
-			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un grupo.");
-			return;
-		}
-		var name = game.getUsername(msg);
-		game.createGame({room_id: msg.chat.id, from_id: msg.from.id, from_name: name, type: match[1], n_players: match[2], n_cardstowin: match[3], dictionary: match[4]}, function (res){
-			//Capturamos errores
-			if (res.status == "ERR") {
-				switch (res.msg) {
-					case "ERR_ACTIVE_GAME":
-						bot.sendMessage(msg.chat.id, "Este grupo ya tiene una partida activa, su creador puede borrarla con /delete");
-					break;
-					case "ERR_ALREADY_IN_GAME":
-						bot.sendMessage(msg.chat.id, "Ya estas participando en otra partida.");
-					break;
-					default:
-						bot.sendMessage(msg.chat.id, "Error inesperado.");
-						console.log(res);
-					break;
-				}
-				return;
-			}
-			//Enviamos mensaje de confirmacion del diccionario
-			if (res.data.dictionary_status != "DICTIONARY_OK")
-				bot.sendMessage(msg.chat.id, "Lo siento, ese diccionario no existe o esta incompleto, utilizando el diccionario 'clasico' en su lugar...");
-					
-			//Se envia la informacion al grupo.
-			bot.sendMessage(msg.chat.id, "Se ha creado la sala usando el diccionario '"+res.data.dictionary+"', ahora escribeme por privado (a @cclhbot) lo siguiente:");
-			//Y se añade al jugador que creó la partida
-			setTimeout(function(){
-				bot.sendMessage(msg.chat.id, "/join "+res.data.game_id);
-				game.joinGame({game_id: res.data.game_id, user_id: msg.from.id, username: name}, function (){
-					//Y se le notifica por privado
-					bot.sendMessage(msg.from.id, "Te has unido a la partida.");
-					setTimeout(function(){bot.sendMessage(msg.chat.id, name+" se ha unido a la partida.");}, 550);
-				});
-			}, 300);
-		});
-	});
-	//Si el comando es /join
-	bot.onText(/^\/join(?:@cclhbot)?\s(.*)/i, function (msg, match) {
-		//Detectamos si el mensaje recibido es por privado
 		if (msg.chat.type != "private") {
-			bot.sendMessage(msg.chat.id, "Por favor enviame este comando por privado.");
+			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un privado.");
 			return;
 		}
-		//Obtenemos el nombre de usuario del creador
-		var name = game.getUsername(msg);
-		game.joinGame({game_id: match[1], user_id: msg.from.id, username: name}, function (res){
-			//Capturamos errores
+		game.createUser({user_id: msg.from.id, username: game.getUsername(msg)}, function (res){
 			if (res.status == "ERR") {
 				switch (res.msg) {
-					case "ERR_UNKNOWN_GAME":
-						bot.sendMessage(msg.chat.id, "La partida especificada no existe.");
-					break;
-					case "ERR_ALREADY_STARTED":
-						bot.sendMessage(msg.chat.id, "Ya se ha iniciado la partida.");
-					break;
-					case "ERR_ALREADY_FILLED":
-						bot.sendMessage(msg.chat.id, "La partida esta llena, no puedes unirte.");
-					break;
 					case "ERR_ALREADY_IN_GAME":
-						bot.sendMessage(msg.chat.id, "Ya estas participando en otra partida.");
+						bot.sendMessage(msg.chat.id, "Ya estas registrado en el juego.");
 					break;
 					default:
 						bot.sendMessage(msg.chat.id, "Error inesperado.");
@@ -92,34 +34,23 @@ var game = new Cclhbot(privatedata.url, function (res){
 				}
 				return;
 			}
-			//Y se le notifica por privado
-			bot.sendMessage(msg.chat.id, "Te has unido a la partida.");
-			setTimeout(function(){bot.sendMessage(res.data.room_id, name+" se ha unido a la partida");}, 550);
+			bot.sendMessage(msg.from.id, "Cuenta creada. Utiliza el comando /create en un grupo para crear una partida o haz click en Unirse a la partida si ya hay una creada.");
 		});
 	});
-	//Si el comando es /startgame
-	bot.onText(/^\/startgame(?:@cclhbot)?/i, function (msg, match) {
+	//Si el comando es /create y sus parametros son:
+	//numero_de_players-> ([2-9])
+	bot.onText(new RegExp("^\\/create(?:@"+privatedata.botalias+")?\\s(dictadura|clasico|democracia)\\s([2-9])\\s([1-9])(?:\\s(.*))?", "i"), function (msg, match) {	
 		//Detectamos si el mensaje recibido es por un grupo
 		if (msg.chat.type == "private") {
 			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un grupo.");
 			return;
 		}
-		//Iniciamos la partida
-		game.startGame(msg.from.id, msg.chat.id, function (res){
+		game.getUser(msg.from.id, function (res){
 			//Capturamos errores
 			if (res.status == "ERR") {
 				switch (res.msg) {
-					case "ERR_NO_ACTIVE_GAMES":
-						bot.sendMessage(msg.chat.id, "Este grupo no tiene partidas activas.");
-					break;
-					case "ERR_NOT_CREATOR_START":
-						bot.sendMessage(msg.chat.id, "Solo el creador "+res.extra.creator_name+" puede iniciar la partida.");
-					break;
-					case "ERR_ALREADY_STARTED":
-						bot.sendMessage(msg.chat.id, "La partida ya esta iniciada.");
-					break;
-					case "ERR_NOT_ENOUGHT_PLAYERS":
-						bot.sendMessage(msg.chat.id, "Aun no se ha llenado la partida. "+res.extra.current_players+" de "+res.extra.max_players+" participantes");
+					case "ERR_NOT_IN_GAME":
+						bot.sendMessage(msg.chat.id, "Debes hablar conmigo (@"+privatedata.botalias+") por privado y mandar el mensaje /start.");
 					break;
 					default:
 						bot.sendMessage(msg.chat.id, "Error inesperado.");
@@ -128,378 +59,557 @@ var game = new Cclhbot(privatedata.url, function (res){
 				}
 				return;
 			}
-			//Iniciamos la primera ronda
-			game.startRound(res.data.game, res.data.players, function (user_id, blackcard, cards_array, cards_string){
-				if (res.status == "ERR") {
-					bot.sendMessage(msg.chat.id, "Error inesperado.");
-					console.log(res);
-					return;
+			//Comprobamos que no este jugando
+			if (res.playing){
+				bot.sendMessage(msg.chat.id, "Ya estas participando en otra partida.");
+				return;
+			}
+			//Comprobamos que el diccionario exista
+			dictionary = match[4];
+			if (typeof dictionary != "string" || dictionary == "") dictionary = "clasico";
+			game.db.count('dictionaries', {name: dictionary, valid:1}, function(count_dict) {
+				baddictionary = false;
+				if (!count_dict) {
+					dictionary = "clasico";
+					baddictionary = true;
 				}
-				//Enviamos la cartas a cada jugador
-				var opts = {
-					reply_markup: JSON.stringify({
-						keyboard: cards_array,
-						one_time_keyboard: true
-					})
-				};
-				bot.sendMessage(user_id, blackcard+"\nElige una opcion:\n"+cards_string, opts);
-			}, function (r_res){
-				//Enviamos la carta y el lider por el grupo
-				if (r_res.status == "ERR") {
-					bot.sendMessage(msg.chat.id, "Error inesperado.");
-					console.log(res);
-					return;
-				}
-				bot.sendMessage(msg.chat.id, "La carta negra de esta ronda es: \n"+r_res.data.blackcard);
-				if (r_res.data.game_type == "clasico") {
-					bot.sendMessage(r_res.data.dictator_id, "Eres el lider de esta ronda.");
-					bot.sendMessage(msg.chat.id, "El lider de esta ronda es: "+r_res.data.dictator_name);
-				}
+				//Creamos la partida
+				game.createGame({
+					msg_id: msg.id,
+					room_id: msg.chat.id,
+					creator_id: res.msg._id,
+					president_id: 0,
+					currentblack: 0,
+					n_players: match[2],
+					type: match[1],
+					n_cardstowin: match[3],
+					dictionary: dictionary
+				}, function (game_res){
+					//Capturamos errores
+					if (game_res.status == "ERR") {
+						switch (game_res.msg) {
+							case "ERR_ACTIVE_GAME":
+								bot.sendMessage(msg.chat.id, "Este grupo ya tiene una partida activa, su creador debe borrarla antes de crear otra.");
+							break;
+							default:
+								bot.sendMessage(msg.chat.id, "Error inesperado.");
+								console.log(game_res);
+							break;
+						}
+						return;
+					}
+					//Guardamos las cartas
+					game.db.find('whitecards', {dictionary: dictionary}, function (array){
+						array = game.shuffleArray(array).slice(0, parseInt(match[2])*45);
+						newarray = [];
+						for (i = 0; i < array.length; i++){
+							newarray.push({card_text: array[i].card_text, game_id: game_res.msg.game_id, player_order: Math.round(i/45)+1, used: 0});
+						}
+						game.db.insertMany('wcardsxgame', newarray);
+					});
+					game.db.find('blackcards', {dictionary: dictionary}, function (array){
+						array = game.shuffleArray(array).slice(0, parseInt(match[2])*45);
+						newarray = [];
+						for (i = 0; i < array.length; i++){
+							newarray.push({card_text: array[i].card_text, game_id: game_res.msg.game_id, game_order: i});
+						}
+						game.db.insertMany('bcardsxgame', newarray);
+					});
+					//Creamos mensaje de confirmacion del diccionario
+					if (baddictionary) dictionary_text = "Lo siento, ese diccionario no existe o esta incompleto. Se ha creado la sala utilizando el diccionario 'clasico' en su lugar.";
+					else dictionary_text = "Se ha creado la sala utilizando el diccionario '"+dictionary+"'.";
+					//Añadimos a la partida al usuario que la ha creado
+					game.joinGame({
+						game_id: game_res.msg.game_id,
+						player_id: res.msg._id,
+						player_uid: res.msg.user_id,
+						player_username: res.msg.username, 
+						points: 0, 
+						vote_delete: 0
+					}, function (player_res){
+						//Capturamos errores
+						if (player_res.status == "ERR") {
+							switch (player_res.msg) {
+								default:
+									bot.sendMessage(msg.chat.id, "Error inesperado.");
+									console.log(player_res);
+								break;
+							}
+							return;
+						}
+						//Creamos el array de botones para gestionar el grupo
+						var opts = {
+							reply_markup: JSON.stringify({
+								inline_keyboard: [
+									[{text: "Unirse a la partida", callback_data: "join_"+game_res.msg.game_id}],
+									[{text: "Borrar la partida", callback_data: "delete_"+game_res.msg.game_id}],
+									[{text: "Iniciar la partida", callback_data: "start_"+game_res.msg.game_id}]
+								]
+							})
+						};
+						bot.sendMessage(msg.chat.id, dictionary_text+"\nParticipantes:\n"+res.msg.username, opts);
+						bot.sendMessage(res.msg.user_id, "Te has unido a una partida.");
+					});
+				});
 			});
 		});
 	});
-	//Si es una carta
-	bot.onText(/^\/([0-9]+)\s(.*)/i, function (msg, match) {
-		//Detectamos si el mensaje recibido es por privado
-		if (msg.chat.type != "private") {
-			bot.sendMessage(msg.chat.id, "Por favor enviame este comando por privado.");
-			return;
-		}
-		game.sendCard(msg.from.id, match[1], match[2], function (res){
+	//Si recibimos una callbackQuery
+	bot.on('callback_query', function (msg) {
+		game.getUser(msg.from.id, function (res){
 			//Capturamos errores
 			if (res.status == "ERR") {
 				switch (res.msg) {
-					case "ERR_USER_NO_GAME":
-						bot.sendMessage(msg.chat.id, "No estas jugando ninguna partida.");
-					break;
-					case "ERR_GAME_DELETED":
-						bot.sendMessage(msg.chat.id, "La partida que estabas jugando ya no existe.");
-					break;
-					case "ERR_GAME_NOT_STARTED":
-						bot.sendMessage(msg.chat.id, "La partida aun no se ha iniciado.");
-					break;
-					case "ERR_ALL_ALREADY_RESPONSED":
-						bot.sendMessage(msg.chat.id, "Ya ha respondido todo el mundo.");
-					break;
-					case "ERR_USER_ALREADY_RESPONSED":
-						bot.sendMessage(msg.chat.id, "Ya has respondido en esta ronda");
-					break;
-					case "ERR_DICTATOR_NOT_ALLOWED":
-						bot.sendMessage(msg.chat.id, "El dictador no puede elegir carta.");
+					case "ERR_NOT_IN_GAME":
+						bot.answerCallbackQuery(msg.id, "Debes hablar conmigo (@"+privatedata.botalias+") por privado y mandar el mensaje /start.");
 					break;
 					default:
-						bot.sendMessage(msg.chat.id, "Error inesperado.");
+						bot.answerCallbackQuery(msg.id, "Error inesperado.");
 						console.log(res);
 					break;
 				}
 				return;
 			}
-			if (res.data.status == "NORMAL"){
-				var opts = {
-					reply_markup: JSON.stringify({
-						hide_keyboard: true
-					})
-				};
-				bot.sendMessage(msg.chat.id, "Has elegido: "+match[2], opts);
-			} else {
-				bot.sendMessage(msg.chat.id, "Has elegido: "+match[2], opts);
-				var opts2 = {
-					reply_markup: JSON.stringify({
-						keyboard: res.data.card_array,
-						one_time_keyboard: true
-					})
-				};
-				//Segun el tipo de partida hace una cosa u otra
-				if (res.data.game_type == "dictadura"){//Dictadura solo vota el lider
-					res.data.card_string = res.data.blackcard+"\nEstas son las opciones, el lider votara por privado: \n"+res.data.card_string;
-					bot.sendMessage(res.data.user_id, res.data.blackcard+"\nDebes votar una de estas opciones: ", opts2);
-				} else if (res.data.game_type == "clasico") {//Clasico solo vota el lider de esa ronda
-					res.data.card_string = res.data.blackcard+"\nEstas son las opciones, el lider de esta ronda votara por privado: \n"+res.data.card_string;
-					bot.sendMessage(res.data.user_id, res.data.blackcard+"\nDebes votar una de estas opciones: ", opts2);
-				} else if (res.data.game_type == "democracia"){//Democracia votan todos
-					res.data.card_string = res.data.blackcard+"\nAhora podeis votar por privado entre las siguientes cartas: \n"+res.data.card_string;
-					for (i = 0; i<res.data.user_id.length; i++){
-						bot.sendMessage(res.data.user_id[i], res.data.blackcard+"\nDebes votar una de estas opciones: ", opts2);
-					}
-				} else bot.sendMessage(msg.chat.id, "Ha ocurrido un error inesperado.");
-				bot.sendMessage(res.data.room_id, res.data.card_string);
-			}
-		});
-	});
-	//Si el comando es /vote
-	bot.onText(/^\/vote\_([0-9]+)\s(.*)/i, function (msg, match) {
-		//Detectamos si el mensaje recibido es por privado
-		if (msg.chat.type != "private") {
-			bot.sendMessage(msg.chat.id, "Por favor enviame este comando por privado.");
-			return;
-		}
-		game.sendVote(msg.from.id, match[1], function (res){
-			//Capturamos errores
-			if (res.status == "ERR") {
-				switch (res.msg) {
-					case "ERR_USER_NO_GAME":
-						bot.sendMessage(msg.chat.id, "No estas jugando ninguna partida.");
-					break;
-					case "ERR_GAME_DELETED":
-						bot.sendMessage(msg.chat.id, "La partida que estabas jugando ya no existe.");
-					break;
-					case "ERR_GAME_NOT_STARTED":
-						bot.sendMessage(msg.chat.id, "La partida aun no se ha iniciado.");
-					break;
-					case "ERR_ALL_NOT_ALREADY_RESPONSED":
-						bot.sendMessage(msg.chat.id, "Aun no han enviado carta todos los jugadores.");
-					break;
-					case "ERR_CARD_NOT_FOUND":
-						bot.sendMessage(msg.chat.id, "La carta votada no existe.");
-					break;
-					case "ERR_DICTATOR_NOT_ALLOWED":
-						bot.sendMessage(msg.chat.id, "El dictador no puede elegir carta.");
-					break;
-					default:
-						bot.sendMessage(msg.chat.id, "Error inesperado.");
-						console.log(res);
-					break;
+			var data = msg.data.split("_");
+			if (data[0] == "join"){
+				if (res.playing){
+					bot.answerCallbackQuery(msg.id, "Ya estas participando en una partida.");
+					return;
 				}
-				return;
-			}
-			var opts = {   
-				reply_markup: JSON.stringify({
-					hide_keyboard: true
-				})
-			};
-			bot.sendMessage(msg.chat.id, "Has votado: "+match[2], opts);
-			if (res.status != "VOTED") {
-				bot.sendMessage(res.data.player.user_id, "Has ganado la ronda con tu carta: \n"+res.data.cards.card_text+"\nTienes "+(res.data.player.points+1)+" puntos.");
-				bot.sendMessage(res.data.game.room_id, res.data.player.username+" ha ganado la ronda con su carta: \n"+res.data.cards.card_text+"\nTiene "+(res.data.player.points+1)+" puntos.");
-			
-				game.roundWinner(res.data.player, res.data.game, res.data.game.room_id, function (resp) {
-					if (resp.status == "ERR") {
-						bot.sendMessage(msg.chat.id, "Error inesperado.");
-						console.log(res);
+				game.joinGame({
+					game_id: game.db.getObjectId(data[1]),
+					player_id: game.db.getObjectId(res.msg._id),
+					player_uid: res.msg.user_id,
+					player_username: res.msg.username, 
+					points: 0, 
+					vote_delete: 0
+				}, function (join_res){
+					//Capturamos errores
+					if (join_res.status == "ERR") {
+						switch (join_res.msg) {
+							case "ERR_UNKNOWN_GAME":
+								bot.answerCallbackQuery(msg.id, "Esta partida no existe.");
+							break;
+							case "ERR_ALREADY_STARTED":
+								bot.answerCallbackQuery(msg.id, "Esta partida ya está iniciada.");
+							break;
+							case "ERR_ALREADY_FILLED":
+								bot.answerCallbackQuery(msg.id, "La partida ya está llena.");
+							break;
+							default:
+								bot.answerCallbackQuery(msg.id, "Error inesperado.");
+								console.log(join_res);
+							break;
+						}
 						return;
 					}
-					setTimeout(function(){
-						bot.sendMessage(res.data.player.user_id, emoji.confetti_ball+" Has ganado la partida!! "+emoji.confetti_ball);
-						bot.sendMessage(res.data.game.room_id, res.data.player.username+" ha ganado la partida!! "+emoji.confetti_ball+" "+emoji.confetti_ball);
-					}, 300);
-				}, function (resp) {
+					//ToDo: asignar extras al player 
+					var opts = {
+						chat_id: msg.message.chat.id, 
+						message_id: msg.message.message_id,
+						reply_markup: JSON.stringify({
+							inline_keyboard: [
+								[{text: "Unirse a la partida", callback_data: "join_"+data[1]}],
+								[{text: "Borrar la partida", callback_data: "delete_"+data[1]}],
+								[{text: "Iniciar la partida", callback_data: "start_"+data[1]}]
+							]
+						})
+					};
+					bot.editMessageText(msg.message.text+"\n"+res.msg.username, opts);
+					bot.answerCallbackQuery(msg.id, 'Te has unido correctamente a la partida.');
+					//Creamos el array de botones para gestionar el grupo
+					var opts = {
+						reply_markup: JSON.stringify({
+							inline_keyboard: [
+								[{text: "Dejar la partida", callback_data: "leave_"+data[1]}]
+							]
+						})
+					};
+					bot.sendMessage(res.msg.user_id, "Te has unido a una partida.", opts);
+				});
+			} else if (data[0] == "delete"){
+				game.deleteGame(res.msg._id, data[1], function (res){
+					//Capturamos errores
 					if (res.status == "ERR") {
-						bot.sendMessage(msg.chat.id, "Error inesperado.");
-						console.log(res);
+						switch (res.msg) {
+							case "ERR_NO_ACTIVE_GAMES":
+								bot.answerCallbackQuery(msg.id, "Esta partida ya está borrada.");
+							break;
+							case "ERR_CREATOR_DELETE":
+								bot.answerCallbackQuery(msg.id, "Solo el creador puede borrar la partida.");
+								//ToDo: vote delete?
+							break;
+							default:
+								bot.answerCallbackQuery(msg.id, "Error inesperado.");
+								console.log(res);
+							break;
+						}
 						return;
 					}
+					game.db.remove('wcardsxgame', {game_id: game.db.getObjectId(data[1])});
+					game.db.remove('bcardsxgame', {game_id: game.db.getObjectId(data[1])});
+					game.db.remove('cardsxround', {game_id: game.db.getObjectId(data[1])});
+					bot.editMessageText("Partida borrada", {chat_id: msg.message.chat.id, message_id: msg.message.message_id});
+					bot.answerCallbackQuery(msg.id,  "Se ha borrado la partida.");
+				});
+			} else if (data[0] == "start"){
+				game.startGame(res.msg._id, data[1], msg.message.message_id, function (g_res){ 
+					//Capturamos errores
+					if (g_res.status == "ERR") {
+						switch (g_res.msg) {
+							case "ERR_NO_ACTIVE_GAMES":
+								bot.answerCallbackQuery(msg.id, "Este grupo no tiene partidas activas.");
+							break;
+							case "ERR_NOT_CREATOR_START":
+								bot.answerCallbackQuery(msg.id, "Solo el creador puede iniciar la partida.");
+							break;
+							case "ERR_ALREADY_STARTED":
+								bot.answerCallbackQuery(msg.id, "La partida ya esta iniciada.");
+							break;
+							case "ERR_NOT_ENOUGHT_PLAYERS":
+								bot.answerCallbackQuery(msg.id, "Aun no se ha llenado la partida. "+g_res.extra.current_players+" de "+g_res.extra.max_players+" participantes");
+							break;
+							default:
+								bot.answerCallbackQuery(msg.id, "Error inesperado.");
+								console.log(g_res);
+							break;
+						}
+						return;
+					}
+					var opts = {
+						chat_id: msg.message.chat.id, 
+						message_id: msg.message.message_id,
+						reply_markup: JSON.stringify({
+							inline_keyboard: [
+								[{text: "Borrar la partida", callback_data: "delete_"+data[1]}],
+								[{text: "Consultar cartas", callback_data: "checkcards_"+data[1]}],
+								[{text: "Consultar votos", callback_data: "checkvotes_"+data[1]}]
+							]
+						})
+					};
+					bot.editMessageText(msg.message.text, opts);
 					//Iniciamos la primera ronda
-					game.startRound(res.data.game, res.data.players, function (user_id, blackcard, cards_array, cards_string){
+					game.startRound(g_res.data.game, g_res.data.players, function (user_id, blackcard, cards_array, cards_string){
+						var optsarray = [];
+						for (var card of cards_array){
+							optsarray.push([{text: card.text, callback_data: "card_"+data[1]+"_"+card.id}]);
+						}
 						//Enviamos la cartas a cada jugador
 						var opts = {
 							reply_markup: JSON.stringify({
-								keyboard: cards_array,
-								one_time_keyboard: true
+								inline_keyboard: optsarray
 							})
 						};
-						bot.sendMessage(user_id, blackcard+"\nElige una opcion:\n "+cards_string, opts);
+						bot.sendMessage(user_id, blackcard+"\nElige una opcion:\n"+cards_string, opts);
 					}, function (r_res){
 						//Enviamos la carta y el lider por el grupo
 						if (r_res.status == "ERR") {
-							bot.sendMessage(msg.chat.id, "Error inesperado.");
+							bot.answerCallbackQuery(msg.id, "Error inesperado.");
 							console.log(r_res);
 							return;
 						}
-						setTimeout(function(){
-							bot.sendMessage(res.data.game.room_id, "La carta negra de esta ronda es: \n"+r_res.data.blackcard);
-							if (r_res.data.game_type == "clasico") {
-								bot.sendMessage(r_res.data.dictator_id, "Eres el lider de esta ronda.");
-								bot.sendMessage(r_res.data.room_id, "El lider de esta ronda es: "+r_res.data.dictator_name);
-							}
-						}, 300);
-					});
-				});
-			}
-		});
-	});
-	//Si el comando es /delete
-	bot.onText(/^\/delete(?:@cclhbot)?/i, function (msg, match) {
-		//Detectamos si el mensaje recibido es por un grupo
-		if (msg.chat.type == "private") {
-			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un grupo.");
-			return;
-		}
-		game.deleteGame(msg.from.id, msg.chat.id, function (res){
-			//Capturamos errores
-			if (res.status == "ERR") {
-				switch (res.msg) {
-					case "ERR_NO_ACTIVE_GAMES":
-						bot.sendMessage(msg.chat.id, "Este grupo no tiene partidas activas..");
-					break;
-					case "ERR_CREATOR_DELETE":
-						bot.sendMessage(msg.chat.id, "Solo el creador "+res.extra.creator_name+" puede borrar la partida.");
-					break;
-					default:
-						bot.sendMessage(msg.chat.id, "Error inesperado.");
-						console.log(res);
-					break;
-				}
-				return;
-			}
-			bot.sendMessage(msg.chat.id, "Se ha borrado la partida.");
-		});
-	});
-	//Si el comando es /checkvotes
-	bot.onText(/^\/checkvotes(?:@cclhbot)?/i, function (msg, match) {
-		//Detectamos si el mensaje recibido es por un grupo
-		if (msg.chat.type == "private") {
-			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un grupo.");
-			return;
-		}
-		//Buscamos en la tabla games si el grupo desde el que se invoca tiene ya una partida.
-		game.db.find('games', {room_id: msg.chat.id}, function(r_game) {
-			if (!r_game.length) {
-				bot.sendMessage(msg.chat.id, "Este grupo no tiene partidas activas.");
-				return;
-			}
-			if (!parseInt(r_game[0].currentblack)){
-				bot.sendMessage(msg.chat.id, "La partida aun no esta iniciada.");
-				return;
-			}
-			game.db.count('cardsxround', {game_id: r_game[0].game_id}, function (count_cards){
-				if (count_cards != r_game[0].n_players){
-					bot.sendMessage(msg.chat.id, "Aun no han elegido carta todos los jugadores.");
-					return;
-				}
-				game.db.sumax('cardsxround', 'votes', {game_id: r_game[0].game_id}, function(sum) {
-					//ToDo?: ver quien falta por votar
-					bot.sendMessage(msg.chat.id, "Han votado "+sum[0].sum+" jugadores de "+r_game[0].n_players);
-				});
-			});
-		});
-	});
-	//Si el comando es /checkplayers
-	bot.onText(/^\/checkplayers(?:@cclhbot)?/i, function (msg, match) {
-		//Detectamos si el mensaje recibido es por un grupo
-		if (msg.chat.type == "private") {
-			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un grupo.");
-			return;
-		}
-		//Buscamos en la tabla games si el grupo desde el que se invoca tiene ya una partida.
-		game.db.find('games', {room_id: msg.chat.id}, function(r_game) {
-			if (!r_game.length) {
-				bot.sendMessage(msg.chat.id, "Este grupo no tiene partidas activas.");
-				return;
-			}
-			if (!parseInt(r_game[0].currentblack)){
-				bot.sendMessage(msg.chat.id, "La partida aun no esta iniciada.");
-				return;
-			}
-			game.db.find('players', {game_id: r_game[0].game_id}, function(r_players){
-				game.db.find('cardsxround', {game_id: r_game[0].game_id}, function (r_cards){
-					if (r_players.length == r_cards.length){
-						bot.sendMessage(msg.chat.id, "Todo el mundo ha elegido carta.");
-						return;
-					}
-					var texto = "";
-					for (i=0; i<r_players.length;i++){
-						existe = false;
-						for (j=0; j<r_cards.length;j++){
-							if (r_players[i].user_id == r_cards[j].user_id) existe = true;
-						}
-						if (!existe) texto += r_players[i].username+"\n";
-					}
-					bot.sendMessage(msg.chat.id, "Aun no han elegido carta: \n"+texto);
-				});
-			});
-		});
-	});
-	//Si el comando es /votedelete
-	bot.onText(/^\/votedelete(?:@cclhbot)?/i, function (msg, match) {
-		//Detectamos si el mensaje recibido es por un grupo
-		if (msg.chat.type == "private") {
-			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un grupo.");
-			return;
-		}
-		//Buscamos en la tabla games si el grupo desde el que se invoca tiene ya una partida.
-		game.db.find('games', {room_id: msg.chat.id}, function(r_game) {
-			if (!r_game.length) {
-				bot.sendMessage(msg.chat.id, "Este grupo no tiene partidas activas.");
-				return;
-			}
-			game.db.find('players', {user_id: msg.from.id, game_id: r_game[0].game_id}, function(r_players){
-				if (!r_players.length){
-					bot.sendMessage(msg.chat.id, "No eres miembro de esta partida.");
-					return;
-				}
-				if (parseInt(r_players[0].vote_delete) != 0){
-					bot.sendMessage(msg.chat.id, "Ya has votado para eliminar la partida.");
-					return;
-				}
-				if ((parseInt(r_game[0].vote_delete)+1) < (r_game[0].n_players/2)){ //ToDo?: usar los jugadores que hay en lugar del total
-					game.db.update('games', {game_id: r_game[0].game_id}, {"vote_delete": (parseInt(r_game[0].vote_delete)+1)}, function (){
-						game.db.update('players', {user_id: msg.from.id}, {"vote_delete": 1}, function (){
-							bot.sendMessage(msg.chat.id, "Has votado para eliminar la partida. Deben votar al menos la mitad de los participantes.");
-						});
-					});
-				} else {
-					//Borrar la partida
-					game.deleteGame(r_game[0].game_id, msg.chat.id, function (){
-						bot.sendMessage(msg.chat.id, "Se ha borrado la partida.");
-					});
-				}
-			});
-		});
-	});
-	//ToDo: enviar leave por priv como join?, arreglar una vez esta la partida empezada
-	bot.onText(/^\/leave(?:@cclhbot)?/i, function (msg, match) {
-		if (msg.chat.type == "private") {
-			bot.sendMessage(msg.chat.id, "Por favor enviame este comando por un grupo.");
-			return;
-		}
-		game.db.find('games', {room_id: msg.chat.id}, function(r_game) {
-			if (!r_game.length) {
-				bot.sendMessage(msg.chat.id, "El grupo indicado no existe.");
-				return;
-			}
-			game.db.find('players', {user_id: msg.from.id, game_id: r_game[0].game_id}, function(r_player){
-				if (!r_player.length){
-					bot.sendMessage(msg.chat.id, "No estas jugando esta partida.");
-					return;
-				}
-				if (r_game[0].creator_id == msg.from.id){
-					bot.sendMessage(msg.chat.id, "Lo sentimos, el creador no puede dejar la partida.");
-					return;
-				}
-				if ((r_game[0].type == "clasico" && r_player[0].player_id != r_game[0].dictator_id) || r_game[0].type != "clasico"){
-					game.db.count('cardsxround', {user_id: msg.from.id, game_id: r_game[0].game_id}, function(r_players){
-						if (r_players){
-							bot.sendMessage(msg.chat.id, "Lo sentimos, no puedes abandonar si ya has enviado carta este turno.");
-							return;
-						}
-						if (r_game[0].currentblack != 0){ //Partida iniciada
-							if (r_game[0].n_players-1 < 2){
-								bot.sendMessage(msg.chat.id, r_player[0].username+" ha abandonado la partida.");
-								//Borrar la partida
-								game.deleteGameData(r_game[0].game_id, msg.chat.id, function (){
-									bot.sendMessage(msg.chat.id, "Se ha borrado la partida.");
-								});
-							} else {
-								game.db.find('cardsxround', {game_id: r_game[0].game_id}, function(n_cards){
-									if (n_cards == r_game[0].n_players-1){
-										game.db.update('games', {game_id: r_game[0].game_id}, { "n_players": (parseInt(r_game[0].n_players)-1)}, function (){
-											game.db.remove('players', {user_id: msg.from.id}, function (){
-												bot.sendMessage(msg.chat.id, r_player[0].username+" ha abandonado la partida.");
-											});
-										});
-									} else bot.sendMessage(msg.chat.id, "Lo sentimos, no puedes abandonar si solo quedas tu por elegir carta. Intentalo mas tarde.");
-								});
-							}
-						} else { //Partida sin iniciar
-							game.db.remove('players', {user_id: msg.from.id}, function (){
-								bot.sendMessage(msg.chat.id, r_player[0].username+" ha abandonado la partida.");
+						bot.sendMessage(msg.message.chat.id, "La carta negra de esta ronda es: \n"+r_res.data.blackcard);
+						if (r_res.data.game_type == "clasico") {
+							game.getUser(r_res.data.except_id, function (u_res){
+								bot.sendMessage(u_res.msg.user_id, "Eres el lider de esta ronda.");
+								bot.sendMessage(msg.message.chat.id, "El lider de esta ronda es: "+u_res.msg.username);
 							});
 						}
 					});
-				} else bot.sendMessage(msg.chat.id, "Lo sentimos, el dictador no puede dejar la partida.");
-			});
+				});
+			} else if (data[0] == "card"){ 
+				game.sendCard(res.msg._id, data[1], data[2], function (res){
+					//Capturamos errores
+					if (res.status == "ERR") {
+						switch (res.msg) {
+							case "ERR_USER_NO_GAME":
+								bot.answerCallbackQuery(msg.id, "No estas jugando ninguna partida.");
+							break;
+							case "ERR_GAME_DELETED":
+								bot.answerCallbackQuery(msg.id, "La partida que estabas jugando ya no existe.");
+							break;
+							case "ERR_GAME_NOT_STARTED":
+								bot.answerCallbackQuery(msg.id, "La partida aun no se ha iniciado.");
+							break;
+							case "ERR_ALL_ALREADY_RESPONSED":
+								bot.answerCallbackQuery(msg.id, "Ya ha respondido todo el mundo.");
+							break;
+							case "ERR_USER_ALREADY_RESPONSED":
+								bot.answerCallbackQuery(msg.id, "Ya has respondido en esta ronda");
+							break;
+							case "ERR_DICTATOR_NOT_ALLOWED":
+								bot.answerCallbackQuery(msg.id, "El dictador no puede elegir carta.");
+							break;
+							case "ERR_CARD_ALREADY_USED":
+								bot.answerCallbackQuery(msg.id, "Ya has utilizado esa carta.");
+							break;
+							default:
+								bot.answerCallbackQuery(msg.id, "Error inesperado.");
+								console.log(res);
+							break;
+						}
+						return;
+					}
+					bot.answerCallbackQuery(msg.id, "Has elegido: "+res.data.wcard_text);
+					var opts = {
+						chat_id: msg.message.chat.id, 
+						message_id: msg.message.message_id
+					};
+					bot.editMessageText(res.data.blackcard+"\nHas elegido: "+res.data.wcard_text, opts);
+					if (res.data.status != "NORMAL"){
+						var optsarray = [];
+						for (var card of res.data.card_array){
+							optsarray.push([{text: card.text, callback_data: "vote_"+data[1]+"_"+card.id}]);
+						}
+						//Enviamos la cartas a cada jugador
+						var opts2 = {
+							reply_markup: JSON.stringify({
+								inline_keyboard: optsarray
+							})
+						};
+						//Segun el tipo de partida hace una cosa u otra
+						if (res.data.game_type == "dictadura"){//Dictadura solo vota el lider
+							res.data.card_string = res.data.blackcard+"\nEstas son las opciones, el lider votara por privado: \n"+res.data.card_string;
+							bot.sendMessage(res.data.player_id, res.data.blackcard+"\nDebes votar una de estas opciones: ", opts2);
+						} else if (res.data.game_type == "clasico") {//Clasico solo vota el lider de esa ronda
+							res.data.card_string = res.data.blackcard+"\nEstas son las opciones, el lider de esta ronda votara por privado: \n"+res.data.card_string;
+							bot.sendMessage(res.data.player_id, res.data.blackcard+"\nDebes votar una de estas opciones: ", opts2);
+						} else if (res.data.game_type == "democracia"){//Democracia votan todos
+							res.data.card_string = res.data.blackcard+"\nAhora podeis votar por privado entre las siguientes cartas: \n"+res.data.card_string;
+							for (i = 0; i<res.data.player_id.length; i++){
+								bot.sendMessage(res.data.player_id[i], res.data.blackcard+"\nDebes votar una de estas opciones: ", opts2);
+							}
+						} else bot.answerCallbackQuery(msg.id, "Ha ocurrido un error inesperado.");
+						bot.sendMessage(res.data.room_id, res.data.card_string);
+					}
+				});
+			} else if (data[0] == "vote"){ 
+				game.sendVote(res.msg._id, data[1], data[2], function (res){
+					//Capturamos errores
+					if (res.status == "ERR") {
+						switch (res.msg) {
+							case "ERR_USER_NO_GAME":
+								bot.answerCallbackQuery(msg.id, "No estas jugando ninguna partida.");
+							break;
+							case "ERR_GAME_DELETED":
+								bot.answerCallbackQuery(msg.id, "La partida que estabas jugando ya no existe.");
+							break;
+							case "ERR_GAME_NOT_STARTED":
+								bot.answerCallbackQuery(msg.id, "La partida aun no se ha iniciado.");
+							break;
+							case "ERR_ALL_NOT_ALREADY_RESPONSED":
+								bot.answerCallbackQuery(msg.id, "Aun no han enviado carta todos los jugadores.");
+							break;
+							case "ERR_CARD_NOT_FOUND":
+								bot.answerCallbackQuery(msg.id, "La carta votada no existe.");
+							break;
+							case "ERR_DICTATOR_NOT_ALLOWED":
+								bot.answerCallbackQuery(msg.id, "El dictador no puede elegir carta.");
+							break;
+							default:
+								bot.answerCallbackQuery(msg.id, "Error inesperado.");
+								console.log(res);
+							break;
+						}
+						return;
+					}
+					bot.answerCallbackQuery(msg.id, "Has votado: "+data[2]);
+					var opts = {
+						chat_id: msg.message.chat.id, 
+						message_id: msg.message.message_id
+					};
+					bot.editMessageText("Has votado: "+res.data.vote.card_text, opts);
+					if (res.status != "VOTED") {
+						bot.sendMessage(res.data.player.player_uid, "Has ganado la ronda con tu carta: \n"+res.data.cards.card_text+"\nTienes "+(res.data.player.points+1)+" puntos.");
+						bot.sendMessage(res.data.game.room_id, res.data.player.player_username+" ha ganado la ronda con su carta: \n"+res.data.cards.card_text+"\n"+
+							"Tiene "+(parseInt(res.data.player.points)+1)+" puntos.");
+					
+						game.roundWinner(res.data.player, res.data.game, function (resp) {
+							if (resp.status == "ERR") {
+								bot.answerCallbackQuery(msg.id, "Error inesperado.");
+								console.log(resp);
+								return;
+							}
+							setTimeout(function(){
+								var opts = {
+									chat_id: res.data.game.room_id, 
+									message_id: res.data.game.msg_id
+								};
+								bot.editMessageText("Partida finalizada.\n"+res.data.player.player_username+" ha ganado la partida.", opts);
+								bot.sendMessage(res.data.player.player_uid, emoji.confetti_ball+" Has ganado la partida!! "+emoji.confetti_ball);
+								bot.sendMessage(res.data.game.room_id, res.data.player.player_username+" ha ganado la partida!! "+emoji.confetti_ball+" "+emoji.confetti_ball);
+								
+							}, 300);
+						}, function (resp) {
+							if (resp.status == "ERR") {
+								bot.answerCallbackQuery(msg.id, "Error inesperado.");
+								console.log(resp);
+								return;
+							}
+							//Iniciamos la primera ronda
+							game.startRound(res.data.game, res.data.players, function (user_id, blackcard, cards_array, cards_string){
+								var optsarray = [];
+								for (var card of cards_array){
+									optsarray.push([{text: card.text, callback_data: "card_"+data[1]+"_"+card.id}]);
+								}
+								//Enviamos la cartas a cada jugador
+								var opts = {
+									reply_markup: JSON.stringify({
+										inline_keyboard: optsarray
+									})
+								};
+								bot.sendMessage(user_id, blackcard+"\nElige una opcion:\n"+cards_string, opts);
+							}, function (r_res){
+								//Enviamos la carta y el lider por el grupo
+								if (r_res.status == "ERR") {
+									bot.answerCallbackQuery(msg.id, "Error inesperado.");
+									console.log(r_res);
+									return;
+								}
+								bot.sendMessage(res.data.game.room_id, "La carta negra de esta ronda es: \n"+r_res.data.blackcard);
+								if (r_res.data.game_type == "clasico") {
+									game.getUser(r_res.data.except_id, function (u_res){
+										bot.sendMessage(u_res.msg.user_id, "Eres el lider de esta ronda.");
+										bot.sendMessage(msg.message.chat.id, "El lider de esta ronda es: "+u_res.msg.username);
+									});
+								}
+							});
+						});
+					}
+				});
+			} else if (data[0] == "leave"){
+				if (!res.playing){
+					bot.answerCallbackQuery(msg.id, "No eres miembro de ninguna partida.");
+					return;
+				}
+				game.leaveGame(res.msg._id, data[1], function (res){
+					//Capturamos errores
+					if (res.status == "ERR") {
+						switch (res.msg) {
+							case "ERR_NO_GAME_PARTICIPANT":
+								bot.answerCallbackQuery(msg.id, "No eres miembro de ninguna partida.");
+							break;
+							case "ERR_NO_ACTIVE_GAMES":
+								bot.answerCallbackQuery(msg.id, "La partida ya no está activa.");
+							break;
+							case "ERR_CREATOR_CANT_LEAVE":
+								bot.answerCallbackQuery(msg.id, "Lo sentimos, el creador no puede dejar la partida.");
+							break;
+							default:
+								bot.answerCallbackQuery(msg.id, "Error inesperado.");
+								console.log(res);
+							break;
+						}
+						return;
+					}
+					if (res.msg == "DELETE_GAME"){
+						game.deleteGame(res.msg._id, data[1], function (res){
+							//Capturamos errores
+							if (res.status == "ERR") {
+								switch (res.msg) {
+									case "ERR_NO_ACTIVE_GAMES":
+										bot.answerCallbackQuery(msg.id, "Esta partida ya está borrada.");
+									break;
+									case "ERR_CREATOR_DELETE":
+										bot.answerCallbackQuery(msg.id, "Solo el creador puede borrar la partida.");
+									break;
+									default:
+										bot.answerCallbackQuery(msg.id, "Error inesperado.");
+										console.log(res);
+									break;
+								}
+								return;
+							}
+							bot.editMessageText("Partida borrada", {chat_id: msg.message.chat.id, message_id: msg.message.message_id});
+							bot.answerCallbackQuery(msg.id, "Has abandonado y se ha borrado la partida.");
+						});
+					} else if (res.msg == "DELETE_PLAYER_STARTED") {
+						game.db.find('cardsxround', {game_id: game.db.getObjectId(data[1])}, function(n_cards){
+							if (n_cards != res.msg.n_players-1){
+								bot.answerCallbackQuery(msg.id, "No puedes abandonar la partida.");
+								return;
+							}
+							game.db.update('games', {game_id: game.db.getObjectId(data[1])}, { "n_players": (parseInt(res.msg.n_players)-1)}, function (){
+								game.db.remove('playersxgame', {player_id: res.msg._id}, function (){
+									bot.answerCallbackQuery(msg.id, "Has abandonado la partida.");
+									//ToDo: modificar el mensaje principal
+								});
+							});
+						});
+					} else if (res.msg == "DELETE_PLAYER_NOT_STARTED"){
+						game.leaveUser(res.msg._id, function (){
+							//Capturamos errores
+							if (res.status == "ERR") {
+								switch (res.msg) {
+									default:
+										bot.answerCallbackQuery(msg.id, "Error inesperado.");
+										console.log(res);
+									break;
+								}
+								return;
+							}
+							game.db.find('playersxgame', {game_id: game.db.getObjectId(data[1])}, function (response){
+								if (!response.length){
+									bot.answerCallbackQuery(msg.id, "Error inesperado.");
+									return;
+								}
+								//ToDo: editar el mensaje principal
+								bot.answerCallbackQuery(msg.id, "Has abandonado la partida.");
+							});
+						});
+					} else bot.answerCallbackQuery(msg.id, "Error desconocido.");
+				});
+			} else if (data[0] == "checkcards"){
+				game.checkCards(data[1], function (res) {
+					//Capturamos errores
+					if (res.status == "ERR") {
+						switch (res.msg) {
+							case "ERR_NO_ACTIVE_GAMES":
+								bot.answerCallbackQuery(msg.id, "Este grupo no tiene partidas activas.");
+							break;
+							case "ERR_GAME_NOT_STARTED":
+								bot.answerCallbackQuery(msg.id, "La partida aun no esta iniciada.");
+							break;
+							case "ERR_ALREADY_STARTED":
+								bot.answerCallbackQuery(msg.id, "Todo el mundo ha elegido carta.");
+							break;
+							default:
+								bot.answerCallbackQuery(msg.id, "Error inesperado.");
+								console.log(res);
+							break;
+						}
+						return;
+					}
+					bot.sendMessage(msg.message.chat.id, "Aun no han elegido carta:\n"+res.data.players);
+				});
+			} else if (data[0] == "checkvotes"){
+				game.checkVotes(data[1], function (res) {
+					//Capturamos errores
+					if (res.status == "ERR") {
+						switch (res.msg) {
+							case "ERR_NO_ACTIVE_GAMES":
+								bot.answerCallbackQuery(msg.id, "Este grupo no tiene partidas activas.");
+							break;
+							case "ERR_GAME_NOT_STARTED":
+								bot.answerCallbackQuery(msg.id, "La partida aun no esta iniciada.");
+							break;
+							case "ERR_NOT_ALREADY_STARTED":
+								bot.answerCallbackQuery(msg.id, "Aun no han elegido carta todos los jugadores.");
+							break;
+							default:
+								bot.answerCallbackQuery(msg.id, "Error inesperado.");
+								console.log(res);
+							break;
+						}
+						return;
+					}
+					//ToDo?: ver quien falta por votar
+					bot.answerCallbackQuery(msg.id, "Han votado "+res.data.votes+" jugadores de "+res.data.max_votes);
+				});
+			}
 		});
 	});
+	//Cartas contra la humanidad
 	//Si el comando es /newdictionary
 	//ToDo: poder añadir colaboradores
 	bot.onText(/^\/newdictionary(?:@cclhbot)?\s(.*)/i, function (msg, match) { 
@@ -597,7 +707,7 @@ var game = new Cclhbot(privatedata.url, function (res){
 								bot.sendMessage(msg.chat.id, "Se ha completado el diccionario de cartas blancas. Ahora completa el diccionario de negras.");
 								return;
 							}
-							game.db.update('dictionaries', {creator_id: msg.from.id}, { "valid": 1}, function (){
+							game.db.update('dictionaries', {creator_id: msg.from.id}, {"valid": 1}, function (){
 								bot.sendMessage(msg.from.id, "Diccionario completado, ya puedes jugar con el!");
 							});
 						});
@@ -625,9 +735,10 @@ var game = new Cclhbot(privatedata.url, function (res){
 			bot.sendMessage(msg.chat.id, "Puedes usar cualquiera de estos diccionarios: \n"+texto);
 		});
 	});
-	bot.onText(/^\/bot.sendMessage(?:@cclhbot)?\s(.*)/i, function (msg, match) {
+	//Extra
+	bot.onText(new RegExp("^\\/sendMessage(?:@"+privatedata.botalias+")?\\s(.*)", "i"), function (msg, match) {
 		if (msg.chat.type == "private") {
-			if (msg.chat.id == 5890303) {
+			if (msg.chat.id == privatedata.ownerid) {
 				game.db.find('players', {}, function(r_pla) {
 					if(r_pla.length){
 						for (i=0; i<r_pla.length;i++){
@@ -640,73 +751,17 @@ var game = new Cclhbot(privatedata.url, function (res){
 		} else bot.sendMessage(msg.chat.id, "Por favor envia este comando por privado.");
 	});
 	//Si el comando es /version
-	bot.onText(/^\/version(?:@cclhbot)?/i, function (msg, match) {
-		bot.sendMessage(msg.chat.id, "Versión 0.6. Creado por @themarioga");
-	});
-	//Si el comando es /start
-	bot.onText(/^\/start(?:@cclhbot)?$/i, function (msg, match) {
-		bot.sendMessage(msg.chat.id, "Gracias por unirte al juego de Cartas contra la humanidad para telegram!\nUtiliza el comando /help para mas informacion.");
+	bot.onText(new RegExp("^\/version(?:@"+privatedata.botalias+")?", "i"), function (msg, match) {
+		bot.sendMessage(msg.chat.id, "Versión 0.5. Creado por @"+privatedata.owneralias+".\nAgradecimientos a Eli y Jesus por el testeo y el mensaje de ayuda");
 	});
 	//Si el comando es /create
-	bot.onText(/^\/create(?:@cclhbot)?$/i, function (msg, match) {
-		bot.sendMessage(msg.chat.id, "Error en la sintaxis, consulta /help para mas informacion.");
-	});
-	//Si el comando es /join
-	bot.onText(/^\/join(?:@cclhbot)?$/i, function (msg, match) {
-		bot.sendMessage(msg.chat.id, "Error en la sintaxis, consulta /help para mas informacion.");
-	});
-	//Si el comando es /votedelete
-	bot.onText(/^\/votedelete(?:@cclhbot)?$/i, function (msg, match) {
-		bot.sendMessage(msg.chat.id, "Error en la sintaxis, consulta /help para mas informacion.");
-	});
-	//Si el comando es /newdictionary
-	bot.onText(/^\/newdictionary(?:@cclhbot)?$/i, function (msg, match) {
-		bot.sendMessage(msg.chat.id, "Error en la sintaxis, consulta /help para mas informacion.");
-	});
-	//Si el comando es /addblackcard
-	bot.onText(/^\/addblackcard(?:@cclhbot)?$/i, function (msg, match) {
-		bot.sendMessage(msg.chat.id, "Error en la sintaxis, consulta /help para mas informacion.");
-	});
-	//Si el comando es /addwhitecard 
-	bot.onText(/^\/addwhitecard(?:@cclhbot)?$/i, function (msg, match) {
+	bot.onText(new RegExp("^\/create(?:@"+privatedata.botalias+")?$", "i"), function (msg, match) {
 		bot.sendMessage(msg.chat.id, "Error en la sintaxis, consulta /help para mas informacion.");
 	});
 	//Si el comando es /help
-	bot.onText(/^\/help(?:@cclhbot)?$/i, function (msg, match) {
-		bot.sendMessage(msg.chat.id, 'Bienvenido a la ayuda del juego Cartas Contra la Humanidad, el bot para telegram.\n'+
-		'Puedes ver de que trata, y como jugar aqui: http://cartascontralahumanidad.com/reglas/ \n'+
-		'o un ejemplo practico en este video (en ingles): https://www.youtube.com/watch?v=sw3HXyICwAU \n'+
-		'Para esta version en concreto (bot de telegram), el juego se realiza a traves de comandos, son los siguientes: \n'+
-		'/create dictadura|clasico|democracia numero_de_jugadores numero_de_cartas_para_ganar [nombre_del_diccionario]\n'+
-		'Este comando permite crear una partida, debe escribirse en un grupo, pueden jugar entre 2 y 9 jugadores, y puede haber entre 1 y 5 rondas, un ejemplo de como usarlo seria /create dictadura 5 4 \n'+
-		'Una vez creada el bot nos pedira que nos unamos a la partida, para ello genera un codigo que debemos pasarle por privado (abriendo una conversacion privada con el), este comando es... \n'+
-		'/join codigo_de_la_partida \n'+
-		'Este comando nos permite unirnos a una partida ya creada, debe enviarse por privado, un ejemplo de uso seria /join xyz \n'+
-		'Una vez se haya unido el numero de jugadores especificado en /create el creador puede iniciar la partida con el comando.../startgame \n'+
-		'Este comando, escrito por un grupo inicia una partida en la que ya han entrado todos los jugadores, el bot elije una carta negra y reparte cartas blancas a los jugadores. Cuando todo el mundo haya recibido sus cartas por privado, puede proceder a votarlas haciendo click en los botones con opciones que aparecen. \n'+
-		'Una vez que todos hayan elegido carta el lider votara por la opcion que mas le guste en caso de que sea dictadura (el creador vota siempre) o clasico (en cada ronda hay 1 dictador).\n'+
-		'En caso de que sea democracia todos los jugadores podran votar a su opcion favorita y la mas votada ganara la ronda,en caso de empate se elegira aleatoriamente entre las mas votadas.\n'+
-		'El ganador de la ronda recibira un punto.\n'+
-		'Cuando los puntos de un jugador igualen el numero_de_cartas_para_ganar elegido en el el comando /create habra ganado la partida.\n'+
-		'\n'+
-		'/votedelete codigo_de_la_partida \n'+
-		'Permite a los participantes votar para borrar la partida. Debes pasar el codigo de la partida por parametro (el mismo que el de join), para mayor seguridad. \n'+
-		'/checkplayers \n'+
-		'Devuelve los miembros que han enviado carta en esta ronda. \n'+
-		'/checkvotes \n'+
-		'Devuelve el numero de miembros que han votado en esta ronda. \n'+
-		'\n'+
-		'/leave \n'+
-		'Abandona una partida, solo funciona cuando aun no has enviado carta y no eres el creador/dictador. \n'+
-		'/newdictionary \n'+
-		'Envia este comando por privado para crear un diccionario. \n'+
-		'/addblackcard \n'+
-		'Envia este comando por privado para añadir una carta negra a tu diccionario. \n'+
-		'/addwhitecard \n'+
-		'Envia este comando por privado para añadir una carta blanca a tu diccionario. \n'+
-		'/listdictionaries \n'+
-		'Envia este comando por un grupo para ver la lista de diccionarios. \n'+
-		'\n'+
+	bot.onText(new RegExp("^\/help(?:@"+privatedata.botalias+")?$", "i"), function (msg, match) {
+		bot.sendMessage(msg.chat.id, 'Bienvenido a la ayuda de '+privatedata.botname+', el bot para telegram.\n'+
+		'Puedes consultar la ayuda en el siguiente enlace: http://telegra.ph/Manual-CCLH-BOT-02-06\n'+
 		'Disfrutad del bot y... ¡A jugar!');
 	});
 });

@@ -1,4 +1,5 @@
 var mongodb = require('mongodb');
+var ObjectID = require('mongodb').ObjectID;
 //////////CREATE CLASS//////////
 var MongoClient = mongodb.MongoClient;
 var dbm = Db.prototype;
@@ -14,6 +15,9 @@ function Db(url, callback) {
 	});
 }
 /////dbmS/////
+dbm.getObjectId = function(id){
+	return new ObjectID(id);
+};
 dbm.find = function(table, data, callback) {
 	var g_object = this;
     g_object.db.collection(table).find(data).toArray(function (err, r) {
