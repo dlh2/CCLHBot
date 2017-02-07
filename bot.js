@@ -531,8 +531,18 @@ var game = new GameBot(privatedata.url, function (res){
 							}
 							game.db.update('games', {game_id: game.db.getObjectId(data[1])}, { "n_players": (parseInt(res.msg.n_players)-1)}, function (){
 								game.db.remove('playersxgame', {player_id: res.msg._id}, function (){
-									bot.answerCallbackQuery(msg.id, "Has abandonado la partida.");
-									//ToDo: modificar el mensaje principal
+									game.db.find('playersxgame', {game_id: game.db.getObjectId(data[1])}, function (response){
+										if (!response.length){
+											bot.answerCallbackQuery(msg.id, "Error inesperado.");
+											return;
+										}
+										var participants = "";
+										for (var user of response){
+											participants += user.player_username+"\n";
+										}
+										bot.editMessageText("Participantes: "+participants, {chat_id: msg.message.chat.id, message_id: msg.message.message_id});
+										bot.answerCallbackQuery(msg.id, "Has abandonado la partida.");
+									});
 								});
 							});
 						});
@@ -553,7 +563,11 @@ var game = new GameBot(privatedata.url, function (res){
 									bot.answerCallbackQuery(msg.id, "Error inesperado.");
 									return;
 								}
-								//ToDo: editar el mensaje principal
+								var participants = "";
+								for (var user of response){
+									participants += user.player_username+"\n";
+								}
+								bot.editMessageText("Participantes: "+participants, {chat_id: msg.message.chat.id, message_id: msg.message.message_id});
 								bot.answerCallbackQuery(msg.id, "Has abandonado la partida.");
 							});
 						});
