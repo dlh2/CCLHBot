@@ -8,7 +8,7 @@ var method = Game.prototype;
 //////////CONSTRUCTOR//////////
 function Game(url, callback) {
 	this.db = new Db(url, callback);
-	this.minPlayers = 5;
+	this.minPlayers = 3;
 }
 
 //////////AUX METHODS//////////
@@ -75,7 +75,7 @@ method.leaveUser = function (player_id, callback){
 	});
 };
 
-//createGame: data {from_id, type, n_players, n_cardstowin, dictionary}, callback
+//createGame: data {room_id, from_id, status}, callback
 method.createGame = function(data, callback){
 	var g_object = this;
 	//Buscamos en la tabla games si el grupo desde el que se invoca tiene ya una partida.
@@ -95,6 +95,31 @@ method.createGame = function(data, callback){
 	});
 };
 
+//modifyGame: new_data {}, callback
+method.modifyGame = function(player_id, game_id, new_data, callback){
+	var g_object = this;
+	//Buscamos en la tabla games si el grupo desde el que se invoca no tiene partida o ya esta iniciada
+	g_object.db.find('games', {_id: g_object.db.getObjectId(game_id), status: -1}, function(r_games) {
+		//Si no encuentra resultados
+		if (!r_games.length) {
+			callback({status: "ERR", msg: "ERR_BAD_GAME"});
+			return;
+		}
+		//En el caso de que tenga una partida comprueba que el usuario que la borra es el mismo que la creo.
+		if (r_games[0].creator_id.toString() != player_id){
+			callback({status: "ERR", msg: "ERR_NOT_CREATOR_CONFIG"});
+			return;
+		}
+		g_object.db.update('games', {_id: g_object.db.getObjectId(game_id)}, new_data, function (res) {
+			if (res.status == "ERR"){
+				callback({status: "ERR", msg: res});
+				return;
+			}
+			callback({status: "OK", msg: {game: r_games[0]}});
+		});
+	});
+};
+
 //joinGame: data {data.game_id, data.user_id, data.username}, callback
 method.joinGame = function(data, callback){
 	var g_object = this;
@@ -106,7 +131,7 @@ method.joinGame = function(data, callback){
 			return;
 		}
 		//Comprobamos que la partida no esté iniciada
-		if (parseInt(r_game[0].president_id)){
+		if (parseInt(r_game[0].status) != 0){
 			callback({status: "ERR", msg: "ERR_ALREADY_STARTED"});
 			return;
 		}
@@ -116,10 +141,20 @@ method.joinGame = function(data, callback){
 				callback({status: "ERR", msg: "ERR_ALREADY_FILLED", data: count_players+" >= "+r_game[0].n_players});
 				return;
 			}
-			//Añadimos un contador para el orden
-			data.order = count_players+1;
+			if (r_game[0].type == "clasico"){
+				//Añadimos un contador para el orden
+				data.order = count_players+1;
+			}
 			//Insertamos en la base de datos
 			g_object.db.insert('playersxgame', data, function(){
+				if (count_players+1 == r_game[0].n_players){ //Cuando ya han entrado todos los jugadores
+					g_object.db.update('games', {_id: g_object.db.getObjectId(data.game_id)}, {status: 1}, function (res) {
+						if (res.status == "ERR"){
+							callback({status: "ERR", msg: res});
+							return;
+						}
+					});
+				}
 				callback({status: "OK"});
 			});
 		});
@@ -127,7 +162,7 @@ method.joinGame = function(data, callback){
 };
 
 //startGame: player_id, game_id, callback
-method.startGame = function (player_id, game_id, msg_id, callback){
+method.startGame = function (player_id, game_id, callback){
 	var g_object = this;
 	//Comprueba que el grupo tenga una partida creada.
 	g_object.db.find('games', {_id: g_object.db.getObjectId(game_id)}, function(r_game) {
@@ -142,19 +177,20 @@ method.startGame = function (player_id, game_id, msg_id, callback){
 			return;
 		}
 		//Comprobamos
-		if (parseInt(r_game[0].president_id) != 0){
+		if (parseInt(r_game[0].status) == -1){
+			callback({status: "ERR", msg: "ERR_STILL_CREATING"});
+			return;
+		} else if (parseInt(r_game[0].status) == 2){
 			callback({status: "ERR", msg: "ERR_ALREADY_STARTED"});
 			return;
 		}
 		g_object.db.find('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
-			//Comprobamos que la partida este llena
-			if (r_players.length != r_game[0].n_players){
+			if (parseInt(r_game[0].status) == 0){
 				callback({status: "ERR", msg: "ERR_NOT_ENOUGHT_PLAYERS", extra: {current_players: r_players.length, max_players: r_game[0].n_players}});
 				return;
 			}
-			g_object.db.update('games', {_id: g_object.db.getObjectId(game_id)}, {"msg_id": msg_id, "president_id":  parseInt(r_game[0].president_id)+1 }, function () {
-				r_game[0].president_id = parseInt(r_game[0].president_id)+1;
-				callback({status: "OK", data: {game: r_game[0], players: r_players}});
+			g_object.db.update('games', {_id: g_object.db.getObjectId(game_id)}, {status: 2}, function () {
+				callback({status: "OK", msg: {game: r_game[0], players: r_players}});
 			});
 		});
 	});
@@ -171,16 +207,40 @@ method.deleteGame = function (player_id, game_id, callback) {
 			return;
 		}
 		//Comprueba que el usuario que la borra es el mismo que la creo.
-		if (r_game[0].creator_id.toString() != player_id.toString()){
-			callback({status: "ERR", msg: "ERR_CREATOR_DELETE"});
-			return;
-		}
-		//Borra la partida
-		g_object.db.remove('games', {_id: g_object.db.getObjectId(game_id)}, function (){
-			g_object.db.remove('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function (){
-				callback({status: "OK"});
+		if (r_game[0].creator_id.toString() == player_id.toString()){
+			//Borra la partida
+			g_object.db.remove('games', {_id: g_object.db.getObjectId(game_id)}, function (){
+				g_object.db.remove('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function (){
+					callback({status: "OK"});
+				});
 			});
-		});
+		} else {
+			g_object.db.count('playersxgame', {game_id: g_object.db.getObjectId(game_id), player_id: g_object.db.getObjectId(player_id)}, function(count_players){
+				if (!count_players){
+					callback({status: "ERR", msg: "ERR_NOT_PLAYING"});
+					return;
+				}
+				g_object.db.count('votedeletexgame', {game_id: g_object.db.getObjectId(game_id), player_id: g_object.db.getObjectId(player_id)}, function(player_voted){
+					if (player_voted){
+						callback({status: "ERR", msg: "ERR_ALREADY_VOTED"});
+						return;
+					}
+					g_object.db.count('votedeletexgame', {game_id: g_object.db.getObjectId(game_id)}, function(count_votes){
+						if (count_votes+1 >= Math.trunc(r_game[0].n_players/2)+1){
+							g_object.db.remove('games', {_id: g_object.db.getObjectId(game_id)}, function (){
+								g_object.db.remove('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function (){
+									callback({status: "OK"});
+								});
+							});
+						} else {
+							g_object.db.insert('votedeletexgame', {game_id: g_object.db.getObjectId(game_id), player_id: g_object.db.getObjectId(player_id)}, function (){
+								callback({status: "VOTED", msg: {votes: count_votes+1, n_players: Math.trunc(r_game[0].n_players/2)+1}});
+							});
+						}
+					});
+				});
+			});
+		}
 	});
 };
 
@@ -201,13 +261,11 @@ method.leaveGame = function (player_id, game_id, callback) {
 				callback({status: "ERR", msg: "ERR_CREATOR_CANT_LEAVE"});
 				return;
 			}
-			if (r_game[0].president_id != 0){ //Partida iniciada
+			if (r_game[0].status == 2){ //Partida iniciada
 				//Eres el ultimo, se borra la partida
-				if (r_game[0].n_players-1 < this.minPlayers) callback({status: "OK", msg: "DELETE_GAME"});
-				//No eres el ultimo
-				else callback({status: "OK", msg: "DELETE_PLAYER_STARTED"});
-			//Partida sin iniciar
-			} else callback({status: "OK", msg: "DELETE_PLAYER_NOT_STARTED"});
+				if (r_game[0].n_players-1 < g_object.minPlayers) callback({status: "OK", msg: "DELETE_GAME"});
+				else callback({status: "OK", msg: "DELETE_PLAYER_STARTED"}); //No eres el ultimo
+			} else callback({status: "OK", msg: "DELETE_PLAYER_NOT_STARTED"}); //Partida sin iniciar
 		});
 	});
 };
@@ -216,53 +274,27 @@ method.leaveGame = function (player_id, game_id, callback) {
 //startRound: r_game, r_players, callback
 method.startRound = function (r_game, r_players, msg_callback, callback) {
 	var g_object = this;
-	g_object.db.update('games', {_id: r_game._id}, {"currentblack": (parseInt(r_game.currentblack)+1), "president_id":  r_game.president_id }, function () {
+	g_object.db.update('games', {_id: r_game._id}, {currentblack: (parseInt(r_game.currentblack)+1)}, function () {
 		g_object.db.limitFind('bcardsxgame', {game_order: (parseInt(r_game.currentblack)+1), game_id: r_game._id}, 1, function (bcard){
 			if (!bcard.length){
 				callback({status: "ERR", msg: "ERR_UNEXPECTED"});
 				return;
 			}
-			var except_id = 0;
-			if (r_game.type=="dictadura" || r_game.type=="clasico"){
-				g_object.db.find('playersxgame', {order: r_game.president_id, game_id:g_object.db.getObjectId(r_game._id)}, function(dictator){
-					if (!dictator.length){
-						callback({status: "ERR", msg: "ERR_UNEXPECTED_DICTATOR"});
-						return;
-					}
-					except_id = dictator[0].player_uid;
-					for (i = 0; i < r_players.length; i++){
-						(function(i) {
-							g_object.db.limitFind('wcardsxgame', {player_order: r_players[i].order, game_id: g_object.db.getObjectId(r_game._id), used: 0}, 5, function (wcard){
-								var buttonarray = [];
-								var cardstext = "";
-								for (j = 0; j < wcard.length;j++){
-									buttonarray.push({id: wcard[j]._id, text: wcard[j].card_text});
-									cardstext += (j+1)+". "+wcard[j].card_text+"\n";
-								}
-								if (r_players[i].player_uid != except_id) 
-									msg_callback(r_players[i].player_uid, bcard[0].card_text, buttonarray, cardstext);
-							});
-						})(i);
-					}
-					callback({status: "OK", data: {blackcard: bcard[0].card_text, game_type: r_game.type, except_id: except_id}});
-				});
-			} else {
-				for (i = 0; i < r_players.length; i++){
-					(function(i) {
-						g_object.db.limitFind('wcardsxgame', {player_order: r_players[i].order, game_id: g_object.db.getObjectId(r_game._id), used: 0}, 5, function (wcard){
-							var buttonarray = [];
-							var cardstext = "";
-							for (j = 0; j < wcard.length;j++){
-								buttonarray.push({id: wcard[j]._id, text: wcard[j].card_text});
-								cardstext += (j+1)+". "+wcard[j].card_text+"\n";
-							}
-							if (r_players[i].player_uid != except_id) 
-								msg_callback(r_players[i].player_uid, bcard[0].card_text, buttonarray, cardstext);
-						});
-					})(i);
-				}
-				callback({status: "OK", data: {blackcard: bcard[0].card_text, game_type: r_game.type}});
+			for (i = 0; i < r_players.length; i++){
+				(function(i) {
+					g_object.db.limitFind('wcardsxgame', {player_id: g_object.db.getObjectId(r_players[i].player_id), game_id: g_object.db.getObjectId(r_game._id), used: 0}, 5, function (wcard){
+						var buttonarray = [];
+						var cardstext = "";
+						for (j = 0; j < wcard.length;j++){
+							buttonarray.push({id: wcard[j]._id, text: wcard[j].card_text});
+							cardstext += (j+1)+". "+wcard[j].card_text+"\n";
+						}
+						if (((r_game.type=="dictadura" || r_game.type=="clasico") && r_players[i].player_id.toString() != r_game.president_id.toString()) || r_game.type == "democracia") 
+							msg_callback(r_players[i].player_uid, bcard[0].card_text, buttonarray, cardstext);
+					});
+				})(i);
 			}
+			callback({status: "OK", data: {blackcard: bcard[0].card_text, game_type: r_game.type}});
 		});
 	});
 };
@@ -279,7 +311,7 @@ method.sendCard = function (player_id, game_id, card_id, callback) {
 				callback({status: "ERR", msg: "ERR_GAME_DELETED"});
 				return;
 			}
-			if (!r_game[0].currentblack){
+			if (r_game[0].status != 2){
 				callback({status: "ERR", msg: "ERR_GAME_NOT_STARTED"});
 				return;
 			}
@@ -308,7 +340,7 @@ method.sendCard = function (player_id, game_id, card_id, callback) {
 								return;
 							}
 							g_object.db.insert('cardsxround', {card_id: g_object.db.getObjectId(card_id), card_text: r_card[0].card_text, game_id: g_object.db.getObjectId(game_id), player_id: g_object.db.getObjectId(player_id), player_uid: r_player[0].player_uid, votes: 0}, function(){
-								g_object.db.update('wcardsxgame', {_id: g_object.db.getObjectId(card_id), game_id: g_object.db.getObjectId(game_id), player_order: r_player[0].order}, {used:1}, function (){
+								g_object.db.update('wcardsxgame', {_id: g_object.db.getObjectId(card_id), game_id: g_object.db.getObjectId(game_id), player_id: r_player[0].player_id}, {used:1}, function (){
 									//Si no eres el ultimo en votar
 									if ((r_game[0].type=="dictadura" && n_cards+1 < r_game[0].n_players-1) || 
 										(r_game[0].type=="clasico" && n_cards+1 < r_game[0].n_players-1) || 
@@ -327,18 +359,10 @@ method.sendCard = function (player_id, game_id, card_id, callback) {
 												textgroup += (i+1)+". "+r_cards[i].card_text+"\n";
 												array.push({"id": r_cards[i].card_id, "text": r_cards[i].card_text});
 											}
-											if (r_game[0].type == "dictadura"){//Dictadura solo vota el lider
-												g_object.db.find('playersxgame', {player_id: g_object.db.getObjectId(r_game[0].creator_id), game_id: g_object.db.getObjectId(game_id)}, function(dictator){
+											if (r_game[0].type == "dictadura" || r_game[0].type == "clasico"){//Dictadura solo vota el lider
+												g_object.db.find('playersxgame', {player_id: g_object.db.getObjectId(r_game[0].president_id), game_id: g_object.db.getObjectId(game_id)}, function(dictator){
 													if (!dictator.length) {
 														callback({status: "ERR", msg: "ERR_DICTATOR"});
-														return;
-													}
-													callback({status: "OK", data: {status: "END", wcard_text: r_card[0].card_text, card_array: array, card_string: textgroup, game_type: r_game[0].type, room_id: r_game[0].room_id, blackcard: bcard[0].card_text, player_id: dictator[0].player_uid}});
-												});
-											} else if (r_game[0].type == "clasico") {//Clasico solo vota el lider de esa ronda
-												g_object.db.find('playersxgame', {order: r_game[0].president_id, game_id: g_object.db.getObjectId(game_id)}, function(dictator){
-													if (!dictator.length) {
-														callback({status: "ERR", msg: "ERR_CLASSIC"});
 														return;
 													}
 													callback({status: "OK", data: {status: "END", wcard_text: r_card[0].card_text, card_array: array, card_string: textgroup, game_type: r_game[0].type, room_id: r_game[0].room_id, blackcard: bcard[0].card_text, player_id: dictator[0].player_uid}});
@@ -374,7 +398,7 @@ method.sendVote = function (player_id, game_id, card_id, callback) {
 				callback({status: "ERR", msg: "ERR_GAME_DELETED"});
 				return;
 			}
-			if (!r_game[0].currentblack){
+			if (r_game[0].status != 2){
 				callback({status: "ERR", msg: "ERR_GAME_NOT_STARTED"});
 				return;
 			}
@@ -388,18 +412,14 @@ method.sendVote = function (player_id, game_id, card_id, callback) {
 						callback({status: "ERR", msg: "ERR_CARD_NOT_FOUND"});
 						return;
 					}
-					/*if (r_card[0].player_id.toString() != player_id.toString()){
-						callback({status: "ERR", msg: "ERR_UNEXPECTED_PLAYER"});
-						return;
-					}*/
 					g_object.db.find('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
 						if (!r_players.length){
 							callback({status: "ERR", msg: "ERR_UNEXPECTED_PLAYERS"});
 							return;
 						}
-						if (r_game[0].type=="dictadura"){
-							if (r_game[0].president_id != r_player[0].order){
-								callback({status: "ERR", msg: "ERR_DICTATOR_NOT_ALLOWED"});
+						if (r_game[0].type=="dictadura" || r_game[0].type=="clasico"){
+							if (r_game[0].president_id.toString() != r_player[0].player_id.toString()){
+								callback({status: "ERR", msg: "ERR_DICTATOR_ONLY_ALLOWED"});
 								return;
 							}
 							g_object.db.find('playersxgame', {player_id: g_object.db.getObjectId(r_card[0].player_id)}, function(player){
@@ -409,35 +429,23 @@ method.sendVote = function (player_id, game_id, card_id, callback) {
 								}
 								callback({status: "OK", data: {game: r_game[0], player: player[0], cards: r_card[0], vote: r_card[0], players: r_players}});
 							});
-						} else if (r_game[0].type=="clasico"){
-							g_object.db.find('playersxgame', {order: r_game[0].president_id, game_id: g_object.db.getObjectId(game_id)}, function(dictator){
-								if (dictator[0].player_id.toString() != player_id.toString()){
-									callback({status: "ERR", msg: "ERR_DICTATOR_NOT_ALLOWED"});
-									return;
-								}
-								g_object.db.find('playersxgame', {player_id: r_card[0].player_id}, function(player){
-									if (!player.length){
-										callback({status: "ERR", msg: "ERR_UNEXPECTED_PLAY2"});
-										return;
-									}
-									callback({status: "OK", data: {game: r_game[0], player: player[0], cards: r_card[0], vote: r_card[0], players: r_players}});
-								});
-							});
 						} else if (r_game[0].type="democracia"){
-							g_object.db.update('cardsxround', {card_id: g_object.db.getObjectId(card_id), game_id: g_object.db.getObjectId(game_id)}, { "votes": (parseInt(r_card[0].votes)+1)}, function (){
-								g_object.db.sumax('cardsxround', 'votes', {game_id: g_object.db.getObjectId(game_id)}, function(cxr){
-									if (cxr[0].sum == r_game[0].n_players){
-										g_object.db.sortFind('cardsxround', {game_id: g_object.db.getObjectId(game_id)}, {"votes": -1}, 1, function (card){
-											if (!card.length){
+							g_object.db.insert('votesxround', {player_id: g_object.db.getObjectId(player_id), card_id: g_object.db.getObjectId(card_id), game_id: g_object.db.getObjectId(game_id)}, function (){
+								g_object.db.count('votesxround', {game_id: g_object.db.getObjectId(game_id)}, function (count_res){
+									if (count_res == r_game[0].n_players){
+										g_object.db.getMax('votesxround', 'card_id', {game_id: g_object.db.getObjectId(game_id)}, function (response){
+											if (!response.length){
 												callback({status: "ERR", msg: "ERR_UNEXPECTED_DEMOCRACY_CARD"});
 												return;
 											}
-											g_object.db.find('playersxgame', {player_id: card[0].player_id}, function(player){
-												if (!player.length){
-													callback({status: "ERR", msg: "ERR_UNEXPECTED_DEMOCRACY"});
-													return;
-												}
-												callback({status: "OK", data: {game: r_game[0], player: player[0], cards: card[0], vote: r_card[0], players: r_players}});
+											g_object.db.find('cardsxround', {card_id: response[0]._id, game_id: g_object.db.getObjectId(game_id)}, function (card){
+												g_object.db.find('playersxgame', {player_id: card[0].player_id, game_id: g_object.db.getObjectId(game_id)}, function(player){
+													if (!player.length){
+														callback({status: "ERR", msg: "ERR_UNEXPECTED_DEMOCRACY"});
+														return;
+													}
+													callback({status: "OK", data: {game: r_game[0], player: player[0], cards: card[0], vote: r_card[0], players: r_players}});
+												});
 											});
 										});
 									} else {
@@ -457,34 +465,37 @@ method.roundWinner = function (r_winner, r_game, win_callback, round_callback) {
 	var g_object = this;
 	//Comprueba si se ha acabado la partida
 	if (r_winner.points+1 >= r_game.n_cardstowin){
-		//Devuelve el estado de WIN y borra la partida
+		//Devuelve el estado de OK y borra la partida
 		g_object.deleteGame(r_game.creator_id, r_game._id, function (res){
-			if (res.status != "ERR") {
-				g_object.db.remove('wcardsxgame', {game_id: g_object.db.getObjectId(r_game._id)});
-				g_object.db.remove('bcardsxgame', {game_id: g_object.db.getObjectId(r_game._id)});
-				g_object.db.remove('cardsxround', {game_id: g_object.db.getObjectId(r_game._id)});
-				win_callback({status: "WIN"});
+			if (res.status == "ERR") {
+				win_callback(res);
+				return;
 			}
-			else win_callback(res);
+			win_callback({status: "OK"});
 		});
 	} else {
 		//Actualiza los puntos del ganador de la ronda
 		g_object.db.update('playersxgame', {player_id: g_object.db.getObjectId(r_winner.player_id)}, {"points": (parseInt(r_winner.points)+1)}, function () {
 			//Borra las cartas enviadas en la ronda actual
 			g_object.db.remove('cardsxround', {game_id: g_object.db.getObjectId(r_game._id)}, function (){
-				//Se realiza una accion diferente segun el tipo
-				if (r_game.type == "dictadura" || r_game.type == "democracia"){
-					round_callback({status: "OK"});
-				} else if (r_game.type=="clasico"){
-					var dictador = 0;
-					if (parseInt(r_game.president_id)+1 <= r_game.n_players) dictador = parseInt(r_game.president_id)+1;
-					else dictador = 1;
-					//Cambia el lider de la ronda
-					g_object.db.update('games', {game_id: g_object.db.getObjectId(r_game._id)}, {"president_id": dictador}, function () {
-						r_game.president_id = dictador;
-						round_callback({status: "OK"});
-					});
-				} else round_callback({status: "ERR", msg: "ERR_UNEXPECTED_TYPE"});
+				g_object.db.remove('votesxround', {game_id: g_object.db.getObjectId(r_game._id)}, function (){
+					//Se realiza una accion diferente segun el tipo
+					if (r_game.type == "dictadura" || r_game.type == "democracia"){
+						round_callback({status: "OK", msg: {game:r_game}});
+					} else if (r_game.type=="clasico"){
+						var president_order = parseInt(r_game.president_order);
+						if (president_order+1 <= r_game.n_players) president_order = president_order+1;
+						else president_order = 1;
+						//Cambia el lider de la ronda
+						g_object.db.find('playersxgame', {order: president_order, game_id: g_object.db.getObjectId(r_game._id)}, function (president_res){
+							g_object.db.update('games', {_id: g_object.db.getObjectId(r_game._id)}, {president_order: president_order, president_id: president_res[0].player_id}, function (up_res) {
+								r_game.president_order = president_order;
+								r_game.president_id = president_res[0].player_id;
+								round_callback({status: "OK", msg: {game:r_game}});
+							});
+						});
+					} else round_callback({status: "ERR", msg: "ERR_UNEXPECTED_TYPE"});
+				});
 			});
 		});
 	}
@@ -498,7 +509,7 @@ method.checkCards = function (game_id, callback){
 			callback({status: "ERR", msg: "ERR_NO_ACTIVE_GAMES"});
 			return;
 		}
-		if (!parseInt(r_game[0].currentblack)){
+		if (parseInt(r_game[0].status != 2)){
 			callback({status: "ERR", msg: "ERR_GAME_NOT_STARTED"});
 			return;
 		}
@@ -534,21 +545,35 @@ method.checkVotes = function (game_id, callback){
 			callback({status: "ERR", msg: "ERR_NO_ACTIVE_GAMES"});
 			return;
 		}
-		if (!parseInt(r_game[0].currentblack)){
+		if (parseInt(r_game[0].status != 2)){
 			callback({status: "ERR", msg: "ERR_GAME_NOT_STARTED"});
 			return;
 		}
-		g_object.db.count('cardsxround', {game_id: g_object.db.getObjectId(game_id)}, function (count_cards){
-			if (count_cards != r_game[0].n_players){
-				callback({status: "ERR", msg: "ERR_NOT_ALREADY_STARTED"});
-				return;
-			}
-			g_object.db.sumax('cardsxround', 'votes', {game_id: g_object.db.getObjectId(game_id)}, function(sum) {
-				if (!sum.length) {
-					callback({status: "ERR", msg: "ERR_NO_ACTIVE_GAMES"});
-					return;
-				}
-				callback({status: "OK", data: {votes: sum[0].sum, max_votes: r_game[0].n_players}});
+		g_object.db.find('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
+			g_object.db.find('cardsxround', {game_id: g_object.db.getObjectId(game_id)}, function (r_cards){
+				g_object.db.find('votesxround', {game_id: g_object.db.getObjectId(game_id)}, function (r_votes){
+					if (r_players.length != r_cards.length){
+						callback({status: "ERR", msg: "ERR_CARDS_UNSENT"});
+						return;
+					}
+					if (r_players.length == r_votes.length){
+						callback({status: "ERR", msg: "ERR_USER_ALREADY_VOTED"});
+						return;
+					}
+					var texto = "";
+					for (i=0; i<r_players.length;i++){
+						existe = false;
+						for (j=0; j<r_votes.length;j++){
+							if (r_players[i].player_id.toString() == r_votes[j].player_id.toString()) {
+								if (r_game[0].type == "democracia") existe = true;
+								else if (r_players[i].order != r_game[0].president_id) existe = true;
+							}
+						}
+						if (!existe) texto += r_players[i].player_username+"\n";
+					}
+					//ToDo: devolver array
+					callback({status: "OK", data: {players: texto}});
+				});
 			});
 		});
 	});
