@@ -99,7 +99,7 @@ method.createGame = function(data, callback){
 method.modifyGame = function(player_id, game_id, new_data, callback){
 	var g_object = this;
 	//Buscamos en la tabla games si el grupo desde el que se invoca no tiene partida o ya esta iniciada
-	g_object.db.find('games', {_id: g_object.db.getObjectId(game_id), status: -1}, function(r_games) {
+	g_object.db.find('games', {_id: g_object.db.getObjectId(game_id)/*, status: -1*/}, function(r_games) {
 		//Si no encuentra resultados
 		if (!r_games.length) {
 			callback({status: "ERR", msg: "ERR_BAD_GAME"});
