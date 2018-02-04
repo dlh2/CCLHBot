@@ -6,8 +6,8 @@ var Db = require('./db');
 var method = Game.prototype;
 
 //////////CONSTRUCTOR//////////
-function Game(url, callback) {
-	this.db = new Db(url, callback);
+function Game(url, db, callback) {
+	this.db = new Db(url, db, callback);
 	this.minPlayers = 3;
 }
 
@@ -49,6 +49,24 @@ method.createUser = function (data, callback){
 	});
 };
 
+//modifyUser: {user_id, update_data, callback}
+method.modifyUser = function (user_id, update_data, callback){
+	var g_object = this;
+	g_object.db.count('players', {user_id: user_id}, function (count_player) {
+		if (!count_player){
+			callback({status: "ERR", msg: "ERR_NOT_IN_GAME"});
+			return;
+		}
+		g_object.db.update('players', {user_id: user_id}, update_data, function (res) {
+			if (res.status == "ERR"){
+				callback({status: "ERR", msg: res});
+				return;
+			}
+			callback({status: "OK", msg: res});
+		});
+	});
+};
+
 //getUser: user_id, callback
 method.getUser = function (user_id, callback) {
 	var g_object = this;
@@ -59,19 +77,38 @@ method.getUser = function (user_id, callback) {
 			callback({status: "ERR", msg: "ERR_NOT_IN_GAME"});
 			return;
 		}
-		g_object.db.count('playersxgame', {player_uid: user_id}, function(count_player){
-			if (count_player) callback({status: "OK", msg: array[0], playing: true});
-			else callback({status: "OK", msg: array[0], playing: false});
-		});
+		callback({status: "OK", msg: array[0]});
 	});
 };
 
 //leaveUser: player_id, callback
+//ToDo: pasar comprobaciones a este metodo
 method.leaveUser = function (player_id, callback){
 	var g_object = this;
-	g_object.db.remove('playersxgame', {player_id: g_object.db.getObjectId(player_id)}, function (res){
+	g_object.db.update('players', {_id: g_object.db.getObjectId(player_id)}, {status: 0}, function (res){
 		if (res.status == "ERR") callback(res);
-		else callback({status: "OK"});
+		else {
+			g_object.db.remove('playersxgame', {player_id: g_object.db.getObjectId(player_id)}, function (res){
+				if (res.status == "ERR") callback(res);
+				else callback({status: "OK"});
+			});
+		}
+	});
+};
+
+//leaveUser: game_id, callback
+method.freeUsers = function (game_id, callback){
+	var g_object = this;
+	g_object.db.find('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function (res){
+		if (res.status == "ERR") callback(res);
+		else {
+			for (var i = 0; i < res.length; i++){
+				g_object.db.update('players', {_id: g_object.db.getObjectId(res[i].player_id)}, {status: 0}, function (res){
+					if (res.status == "ERR") callback(res);
+				});
+			}
+			callback({status: "OK"});
+		}
 	});
 };
 
@@ -96,18 +133,13 @@ method.createGame = function(data, callback){
 };
 
 //modifyGame: new_data {}, callback
-method.modifyGame = function(player_id, game_id, new_data, callback){
+method.modifyGame = function(game_id, new_data, callback){
 	var g_object = this;
 	//Buscamos en la tabla games si el grupo desde el que se invoca no tiene partida o ya esta iniciada
-	g_object.db.find('games', {_id: g_object.db.getObjectId(game_id)/*, status: -1*/}, function(r_games) {
+	g_object.db.find('games', {_id: g_object.db.getObjectId(game_id)}, function(r_games) {
 		//Si no encuentra resultados
 		if (!r_games.length) {
 			callback({status: "ERR", msg: "ERR_BAD_GAME"});
-			return;
-		}
-		//En el caso de que tenga una partida comprueba que el usuario que la borra es el mismo que la creo.
-		if (r_games[0].creator_id.toString() != player_id){
-			callback({status: "ERR", msg: "ERR_NOT_CREATOR_CONFIG"});
 			return;
 		}
 		g_object.db.update('games', {_id: g_object.db.getObjectId(game_id)}, new_data, function (res) {
@@ -115,7 +147,7 @@ method.modifyGame = function(player_id, game_id, new_data, callback){
 				callback({status: "ERR", msg: res});
 				return;
 			}
-			callback({status: "OK", msg: {game: r_games[0]}});
+			callback({status: "OK"});
 		});
 	});
 };
@@ -146,16 +178,21 @@ method.joinGame = function(data, callback){
 				data.order = count_players+1;
 			}
 			//Insertamos en la base de datos
-			g_object.db.insert('playersxgame', data, function(){
-				if (count_players+1 == r_game[0].n_players){ //Cuando ya han entrado todos los jugadores
-					g_object.db.update('games', {_id: g_object.db.getObjectId(data.game_id)}, {status: 1}, function (res) {
-						if (res.status == "ERR"){
-							callback({status: "ERR", msg: res});
-							return;
+			g_object.db.update('players', {_id: g_object.db.getObjectId(data.player_id)}, {status: 1}, function (res){
+				if (res.status == "ERR") callback(res);
+				else {
+					g_object.db.insert('playersxgame', data, function(){
+						if (count_players+1 == r_game[0].n_players){ //Cuando ya han entrado todos los jugadores
+							g_object.db.update('games', {_id: g_object.db.getObjectId(data.game_id)}, {status: 1}, function (res) {
+								if (res.status == "ERR"){
+									callback({status: "ERR", msg: res});
+									return;
+								}
+							});
 						}
+						callback({status: "OK"});
 					});
 				}
-				callback({status: "OK"});
 			});
 		});
 	});
@@ -209,15 +246,17 @@ method.deleteGame = function (player_id, game_id, callback) {
 		//Comprueba que el usuario que la borra es el mismo que la creo.
 		if (r_game[0].creator_id.toString() == player_id.toString()){
 			//Borra la partida
-			g_object.db.remove('games', {_id: g_object.db.getObjectId(game_id)}, function (){
-				g_object.db.remove('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function (){
-					callback({status: "OK"});
+			g_object.freeUsers(game_id, function(){
+				g_object.db.remove('games', {_id: g_object.db.getObjectId(game_id)}, function (){
+					g_object.db.remove('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function (){
+						callback({status: "OK"});
+					});
 				});
 			});
 		} else {
 			g_object.db.count('playersxgame', {game_id: g_object.db.getObjectId(game_id), player_id: g_object.db.getObjectId(player_id)}, function(count_players){
 				if (!count_players){
-					callback({status: "ERR", msg: "ERR_NOT_PLAYING"});
+					callback({status: "ERR", msg: "ERR_NOT_IN_THIS_GAME"});
 					return;
 				}
 				g_object.db.count('votedeletexgame', {game_id: g_object.db.getObjectId(game_id), player_id: g_object.db.getObjectId(player_id)}, function(player_voted){
@@ -227,9 +266,11 @@ method.deleteGame = function (player_id, game_id, callback) {
 					}
 					g_object.db.count('votedeletexgame', {game_id: g_object.db.getObjectId(game_id)}, function(count_votes){
 						if (count_votes+1 >= Math.trunc(r_game[0].n_players/2)+1){
-							g_object.db.remove('games', {_id: g_object.db.getObjectId(game_id)}, function (){
-								g_object.db.remove('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function (){
-									callback({status: "OK"});
+							g_object.freeUsers(game_id, function(){
+								g_object.db.remove('games', {_id: g_object.db.getObjectId(game_id)}, function (){
+									g_object.db.remove('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function (){
+										callback({status: "OK"});
+									});
 								});
 							});
 						} else {

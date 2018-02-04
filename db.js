@@ -4,12 +4,15 @@ var ObjectID = require('mongodb').ObjectID;
 var MongoClient = mongodb.MongoClient;
 var dbm = Db.prototype;
 //////////CONSTRUCTOR//////////
-function Db(url, callback) {
+function Db(url, db, callback) {
 	var g_object = this;
-	MongoClient.connect(url, function (err, db) {
+	g_object.dbusr = url;
+	g_object.dbname = db;
+	MongoClient.connect(url, function (err, database) {
 		if (err) callback({status: "ERR", msg: "ERR_CONNECT_DATABASE"});
 		else {
-			g_object.db = db;
+			const dbs = database.db(g_object.dbname)
+			g_object.db = dbs;
 			callback({status: "OK"});
 		}
 	});
@@ -103,6 +106,18 @@ dbm.insertMany = function (table, data, callback){
 dbm.update = function (table, find_data, new_data, callback){
 	var g_object = this;
 	g_object.db.collection(table).updateOne(find_data, {$set: new_data}, function(err, r) {
+		if (err) {
+			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_UPDATE_TABLE", table: table});
+			console.log(err);
+		} else {
+			if (r.result.ok != 1) callback({status: "ERR", msg: "ERR_UPDATE_TABLE", table: table});
+			else if (typeof callback == "function") callback(r);
+		}
+	});
+};
+dbm.updateMany = function (table, find_data, new_data, callback){
+	var g_object = this;
+	g_object.db.collection(table).updateMany(find_data, {$set: new_data}, function(err, r) {
 		if (err) {
 			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_UPDATE_TABLE", table: table});
 			console.log(err);
