@@ -84,16 +84,6 @@ method.getUser = function (player_id, callback) {
 	});
 };
 
-//leaveUser: player_id, callback
-//ToDo: comprobar que el jugador esta jugando
-method.leaveUser = function (player_id, callback){
-	var g_object = this;
-	g_object.db.remove('playersxgame', {player_id: g_object.db.getObjectId(player_id)}, function (res){
-		if (res.status == "ERR") callback(res);
-		else callback({status: "OK"});
-	});
-};
-
 //createGame: data {room_id, creator_id, ...}, callback
 method.createGame = function(data, callback){
 	var g_object = this;
@@ -286,7 +276,7 @@ method.deleteGame = function (player_id, game_id, callback) {
 	});
 };
 
-//ToDo: revisar que funcione
+//leaveGame: player_id, game_id, callback
 method.leaveGame = function (player_id, game_id, callback) {
 	var g_object = this;
 	g_object.db.count('playersxgame', {player_id: g_object.db.getObjectId(player_id), game_id: g_object.db.getObjectId(game_id)}, function(r_player){
@@ -313,7 +303,6 @@ method.leaveGame = function (player_id, game_id, callback) {
 };
 
 ////////////METODOS PROPIOS///////////
-//ToDo: Donde entra por parametro r_game hay que limitar la informacion que recibe a solo la que va a usar
 //startRound: r_game, r_players, callback
 method.startRound = function (r_game, r_players, msg_callback, callback) {
 	var g_object = this;
@@ -573,7 +562,6 @@ method.checkCards = function (game_id, callback){
 					}
 					if (!existe) texto += r_players[i].player_username+"\n";
 				}
-				//ToDo: devolver array
 				callback({status: "OK", data: {players: texto}});
 			});
 		});
@@ -614,7 +602,6 @@ method.checkVotes = function (game_id, callback){
 						}
 						if (!existe) texto += r_players[i].player_username+"\n";
 					}
-					//ToDo: devolver array
 					callback({status: "OK", data: {players: texto}});
 				});
 			});

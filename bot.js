@@ -3,8 +3,6 @@ const TelegramBot = require('node-telegram-bot-api');
 const privatedata = require('./privatedata');
 const GameBot = require('./game');
 const emoji = require('node-emoji').emoji;
-//ToDo: reparar promises
-//ToDo: reducir/optimizar peticiones a bd
 
 //Iniciamos el bot y mongodb
 const bot = new TelegramBot(privatedata.token, {polling: true});
@@ -23,6 +21,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un privado.");
 			return;
 		}
+		//Creamos el usuario
 		game.createUser({user_id: msg.from.id, username: game.getUsername(msg.from)}, function (res){
 			if (res.status == "ERR") {
 				switch (res.msg) {
@@ -48,6 +47,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un privado.");
 			return;
 		}
+		//Modificamos el usuario
 		game.modifyUser(msg.from.id, {username: game.getUsername(msg.from)}, function (res){
 			if (res.status == "ERR") {
 				switch (res.msg) {
@@ -121,6 +121,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						]
 					})
 				};
+				//Añadimos a la base de datos el tipo de partida
 				bot.sendMessage(msg.chat.id, "Se ha creado la partida.\nElige el tipo de partida: ", opts).then(resp => {
 					game.modifyGame(game_res.msg.game_id, {msg_id: resp.message_id}, function(game_res){
 						//Capturamos errores
@@ -157,8 +158,10 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 				}
 				return;
 			}
+			//Parsea la peticion del usuario
 			var data = msg.data.split("_");
 			switch (data[0]) {
+				//Parametros de creacion de partida
 				case "create":
 					game.db.find('games', {creator_id: res.msg._id, room_id: msg.message.chat.id}, function (g_res){
 						if (!g_res.length){
@@ -166,6 +169,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 							return;
 						}
 						switch (data[1]){
+							//Tipo de partida
 							case "type":
 								var data_obj = {};
 								if (data[2] == "democracia") {
@@ -179,6 +183,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									console.log(data[2]);
 									return;
 								}
+								//Modifica la base de datos para añadir el tipo
 								game.modifyGame(g_res[0]._id, data_obj, function(game_res){
 									//Capturamos errores
 									if (game_res.status == "ERR") {
@@ -209,6 +214,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									bot.editMessageText("Elige el número de jugadores: ", opts);
 								});
 							break;
+							//Numero de jugadores de la partida
 							case "nplayers":
 								var nplayers = parseInt(data[2]);
 								if (isNaN(nplayers) || (nplayers < 1 || nplayers > 8)) {
@@ -216,6 +222,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									console.log(data[2]);
 									return;
 								}
+								//Modifica la base de datos para añadir el numero de jugadores
 								game.modifyGame(g_res[0]._id, {n_players: nplayers}, function(game_res){
 									//Capturamos errores
 									if (game_res.status == "ERR") {
@@ -254,12 +261,14 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									bot.editMessageText("Elige el numero de cartas necesarias para ganar: ", opts);
 								});
 							break;
+							//Numero de cartas negras necesarias para ganar
 							case "ncardstowin":
 								if (isNaN(data[2]) != true && (parseInt(data[2]) < 1 || parseInt(data[2]) > 9)) {
 									bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
 									console.log(data[2]);
 									return;
 								}
+								//Modifica la base de datos para añadir el numero de cartas negras necesarias para ganar
 								game.modifyGame(g_res[0]._id, {n_cardstowin: data[2]}, function(game_res){
 									//Capturamos errores
 									if (game_res.status == "ERR") {
@@ -275,7 +284,6 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 										return;
 									}
 									bot.answerCallbackQuery(msg.id, {"text": "Seleccionado " + data[2] + " como numero de cartas para ganar."});
-									//ToDo: poder elegir entre mas de 5 diccionarios (con paginacion)
 									game.db.limitFind('dictionaries', {finished:1}, 5, function(res){
 										var array = [];
 										for (var row of res){
@@ -293,6 +301,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									});
 								});
 							break;
+							//Diccionario a utilizar en la partida
 							case "dictionary":
 								if (isNaN(data[2]) != true && (parseInt(data[2]) < 1 || parseInt(data[2]) > 9)) {
 									bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
@@ -304,6 +313,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 										bot.answerCallbackQuery(msg.id, {"text": "Error el diccionario no existe."});
 										return;
 									}
+									//Modifica el juego para incluir el diccionario
 									game.modifyGame(g_res[0]._id, {dictionary: dictionary_res[0]._id, currentblack: 0, status: 0}, function(game_res){
 										//Capturamos errores
 										if (game_res.status == "ERR") {
@@ -370,7 +380,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						}
 					});
 				break;
-				//ToDo: poder añadir "bots" a la partida
+				//Peticion para unirse a una partida
 				case "join":
 					game.joinGame({
 						game_id: game.db.getObjectId(data[1]),
@@ -429,6 +439,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						bot.sendMessage(res.msg.user_id, "Te has unido a una partida.", opts);
 					});
 				break;
+				//Peticion para iniciar una partida
 				case "start":
 					game.startGame(res.msg._id, data[1], function (game_res){ 
 						//Capturamos errores
@@ -526,6 +537,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						});
 					});
 				break;
+				//Peticion para borrar una partida
 				case "delete":
 					game.deleteGame(res.msg._id, data[1], function (res){
 						//Capturamos errores
@@ -561,7 +573,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						}
 					});
 				break;
-				//ToDo: Arreglar leave
+				//Peticion para abandonar una partida
 				case "leave":
 					game.leaveGame(res.msg._id, data[1], function (res){
 						//Capturamos errores
@@ -583,7 +595,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 							}
 							return;
 						}
-						if (res.msg == "DELETE_GAME"){
+						if (res.msg == "DELETE_GAME"){ //Borra la partida
 							game.deleteGame(res.msg._id, data[1], function (res){
 								//Capturamos errores
 								if (res.status == "ERR") {
@@ -604,12 +616,14 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 								bot.editMessageText("Partida borrada", {chat_id: msg.message.chat.id, message_id: msg.message.message_id});
 								bot.answerCallbackQuery(msg.id, {"text": "Has abandonado y se ha borrado la partida."});
 							});
-						} else if (res.msg == "DELETE_PLAYER_STARTED") {
+						} else if (res.msg == "DELETE_PLAYER_STARTED") { //Elimina al usuario con la partida ya iniciada
 							game.db.find('cardsxround', {game_id: game.db.getObjectId(data[1])}, function(n_cards){
+								//No puedes abandonar la partida si solo quedas tu por elegir carta
 								if (n_cards != res.msg.n_players-1){
 									bot.answerCallbackQuery(msg.id, {"text": "No puedes abandonar la partida."});
 									return;
 								}
+								//Actualiza la base de datos para eliminar al jugador y reducir el tamaño de la partida
 								game.db.update('games', {game_id: game.db.getObjectId(data[1])}, { "n_players": (parseInt(res.msg.n_players)-1)}, function (){
 									game.db.remove('playersxgame', {player_id: res.msg._id}, function (){
 										game.db.find('playersxgame', {game_id: game.db.getObjectId(data[1])}, function (response){
@@ -627,8 +641,8 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									});
 								});
 							});
-						} else if (res.msg == "DELETE_PLAYER_NOT_STARTED"){
-							game.leaveUser(res.msg._id, function (){
+						} else if (res.msg == "DELETE_PLAYER_NOT_STARTED"){ //Elimina al usuario con la partida sin empezar
+							game.db.remove('playersxgame', {player_id: game.db.getObjectId(res.msg._id)}, function (res){
 								//Capturamos errores
 								if (res.status == "ERR") {
 									switch (res.msg) {
@@ -639,6 +653,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									}
 									return;
 								}
+								//Actualiza la base de datos para eliminar al jugador
 								game.db.find('playersxgame', {game_id: game.db.getObjectId(data[1])}, function (response){
 									if (!response.length){
 										bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
@@ -655,6 +670,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						} else bot.answerCallbackQuery(msg.id, {"text": "Error desconocido."});
 					});
 				break;
+				//Si el jugador envia una carta
 				case "card":
 					game.sendCard(res.msg._id, data[1], data[2], function (res){
 						//Capturamos errores
@@ -722,6 +738,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						}
 					});
 				break;
+				//Si el jugador vota una carta
 				case "vote":
 					game.sendVote(res.msg._id, data[1], data[2], function (res){
 						//Capturamos errores
@@ -758,12 +775,14 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 							message_id: msg.message.message_id
 						};
 						bot.editMessageText("Has votado: "+res.data.vote.card_text, opts);
+						//Si ha sido el ultimo en votar...
 						if (res.status != "VOTED") {
 							bot.sendMessage(res.data.player.player_uid, "Has ganado la ronda con tu carta: \n"+res.data.cards.card_text+"\nTienes "+(res.data.player.points+1)+" puntos.");
 							bot.sendMessage(res.data.game.room_id, res.data.player.player_username+" ha ganado la ronda con su carta: \n"+res.data.cards.card_text+"\n"+
 								"Tiene "+(parseInt(res.data.player.points)+1)+" puntos.");
-						
+							//Determinamos el ganador de la ronda
 							game.roundWinner(res.data.player, res.data.game, function (resp) {
+								//Ha terminado la partida
 								if (resp.status == "ERR") {
 									bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
 									console.log(resp);
@@ -784,12 +803,13 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									bot.sendMessage(res.data.game.room_id, res.data.player.player_username+" ha ganado la partida!! "+emoji.confetti_ball+" "+emoji.confetti_ball);
 								}, 300);
 							}, function (resp) {
+								//No ha terminado la partida
 								if (resp.status == "ERR") {
 									bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
 									console.log(resp);
 									return;
 								}
-								//Iniciamos la primera ronda
+								//E iniciamos la siguiente ronda
 								game.startRound(resp.msg.game, res.data.players, function (user_id, blackcard, cards_array, cards_string){
 									var optsarray = [];
 									for (var card of cards_array){
@@ -834,6 +854,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						}
 					});
 				break;
+				//Peticion para comprobar quien falta por enviar carta
 				case "checkcards":
 					game.checkCards(data[1], function (res) {
 						//Capturamos errores
@@ -858,6 +879,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						bot.sendMessage(msg.message.chat.id, "Aun no han elegido carta:\n"+res.data.players);
 					});
 				break;
+				//Peticion para comprobar quien falta por votar
 				case "checkvotes":
 					game.checkVotes(data[1], function (res) {
 						//Capturamos errores
@@ -885,6 +907,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						bot.sendMessage(msg.message.chat.id, "Aun no han votado:\n"+res.data.players);
 					});
 				break;
+				//Comandos de creacion de diccionario
 				case "dictionary":
 					switch (data[1]){
 						//Add collaborators
@@ -1164,7 +1187,6 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	});
 
 	//Add cards (si el comando no empieza por /)
-	//ToDo: poder crear diccionarios de mas de 405/50 cartas
 	bot.onText(new RegExp("^(?!\/).+", "i"), function (msg, match) {
 		//Detectamos si el mensaje recibido es por privado
 		if (msg.chat.type != "private") {
@@ -1262,6 +1284,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 				}
 				return;
 			}
+			//Recuperamos el mensaje de la partida
 			game.db.find('games', {room_id: msg.chat.id}, function(r_games) {
 				if (!r_games.length) {
 					bot.sendMessage(msg.chat.id, "No hay ninguna partida creada.");
