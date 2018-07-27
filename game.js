@@ -11,10 +11,10 @@ function Game(url, db, callback) {
 
 //////////AUX METHODS//////////
 //getUsername: user {first_name, last_name, username}
-method.getUsername = function(msg){
-	var name = msg.from.first_name;
-	if(typeof msg.from.last_name != "undefined") name += " "+msg.from.last_name;
-	if(typeof msg.from.username != "undefined") name += " (@"+msg.from.username+")";
+method.getUsername = function(user){
+	var name = user.first_name;
+	if(typeof user.last_name != "undefined") name += " "+user.last_name;
+	if(typeof user.username != "undefined") name += " (@"+user.username+")";
 	return name
 };
 
@@ -55,12 +55,12 @@ method.createUser = function (data, callback){
 //modifyUser: {player_id, new_data, callback}
 method.modifyUser = function (player_id, new_data, callback){
 	var g_object = this;
-	g_object.db.count('players', {player_id: player_id}, function (count_player) {
+	g_object.db.count('players', {user_id: player_id}, function (count_player) {
 		if (!count_player){
 			callback({status: "ERR", msg: "ERR_NOT_IN_GAME"});
 			return;
 		}
-		g_object.db.update('players', {player_id: player_id}, new_data, function (res) {
+		g_object.db.update('players', {user_id: player_id}, new_data, function (res) {
 			if (res.status == "ERR"){
 				callback({status: "ERR", msg: res});
 				return;
@@ -73,7 +73,7 @@ method.modifyUser = function (player_id, new_data, callback){
 //getUser: player_id, callback
 method.getUser = function (player_id, callback) {
 	var g_object = this;
-	if (typeof player_id == "number") search = {player_id: player_id};
+	if (typeof player_id == "number") search = {user_id: player_id};
 	else search = {_id: player_id};
 	g_object.db.find('players', search, function (array){
 		if (!array.length){
@@ -331,17 +331,17 @@ method.startRound = function (r_game, r_players, msg_callback, callback) {
 	});
 };
 //roundWinner: r_winner, r_game, callback
-method.roundWinner = function (r_winner, r_game, win_callback, round_callback) {
+method.roundWinner = function (r_winner, r_game, callback) {
 	var g_object = this;
 	//Comprueba si se ha acabado la partida
 	if (r_winner.points+1 >= r_game.n_cardstowin){
 		//Devuelve el estado de OK y borra la partida
 		g_object.deleteGame(r_game.creator_id, r_game._id, function (res){
 			if (res.status == "ERR") {
-				win_callback(res);
+				callback(res);
 				return;
 			}
-			win_callback({status: "OK"});
+			callback({status: "END_GAME"});
 		});
 	} else {
 		//Actualiza los puntos del ganador de la ronda
@@ -351,7 +351,7 @@ method.roundWinner = function (r_winner, r_game, win_callback, round_callback) {
 				g_object.db.remove('votesxround', {game_id: g_object.db.getObjectId(r_game._id)}, function (){
 					//Se realiza una accion diferente segun el tipo
 					if (r_game.type == "dictadura" || r_game.type == "democracia"){
-						round_callback({status: "OK", msg: {game:r_game}});
+						callback({status: "OK", data: {game:r_game}});
 					} else if (r_game.type=="clasico"){
 						var president_order = parseInt(r_game.president_order);
 						if (president_order+1 <= r_game.n_players) president_order = president_order+1;
@@ -361,10 +361,10 @@ method.roundWinner = function (r_winner, r_game, win_callback, round_callback) {
 							g_object.db.update('games', {_id: g_object.db.getObjectId(r_game._id)}, {president_order: president_order, president_id: president_res[0].player_id}, function (up_res) {
 								r_game.president_order = president_order;
 								r_game.president_id = president_res[0].player_id;
-								round_callback({status: "OK", msg: {game:r_game}});
+								callback({status: "OK", data: {game:r_game}});
 							});
 						});
-					} else round_callback({status: "ERR", msg: "ERR_UNEXPECTED_TYPE"});
+					} else callback({status: "ERR", msg: "ERR_UNEXPECTED_TYPE"});
 				});
 			});
 		});
@@ -551,18 +551,18 @@ method.checkCards = function (game_id, callback){
 					callback({status: "ERR", msg: "ERR_USER_ALREADY_RESPONSED"});
 					return;
 				}
-				var texto = "";
-				for (i=0; i<r_players.length;i++){
-					existe = false;
-					for (j=0; j<r_cards.length;j++){
+				var players = [];
+				for (i = 0; i < r_players.length; i++){
+					var exists = false;
+					for (j = 0; j < r_cards.length; j++){
 						if (r_players[i].player_id.toString() == r_cards[j].player_id.toString()) {
-							if (r_game[0].type == "democracia") existe = true;
-							else if (r_players[i].order != r_game[0].president_id) existe = true;
+							if (r_game[0].type == "democracia") exists = true;
+							else if (r_players[i].order != r_game[0].president_id) exists = true;
 						}
 					}
-					if (!existe) texto += r_players[i].player_username+"\n";
+					if (!exists) players.push(r_players[i]);
 				}
-				callback({status: "OK", data: {players: texto}});
+				callback({status: "OK", data: {players: players}});
 			});
 		});
 	});
@@ -591,18 +591,18 @@ method.checkVotes = function (game_id, callback){
 						callback({status: "ERR", msg: "ERR_USER_ALREADY_VOTED"});
 						return;
 					}
-					var texto = "";
-					for (i=0; i<r_players.length;i++){
-						existe = false;
-						for (j=0; j<r_votes.length;j++){
+					var players = [];
+					for (i = 0; i < r_players.length; i++){
+						var exists = false;
+						for (j = 0; j < r_votes.length ;j++){
 							if (r_players[i].player_id.toString() == r_votes[j].player_id.toString()) {
-								if (r_game[0].type == "democracia") existe = true;
-								else if (r_players[i].order != r_game[0].president_id) existe = true;
+								if (r_game[0].type == "democracia") exists = true;
+								else if (r_players[i].order != r_game[0].president_id) exists = true;
 							}
 						}
-						if (!existe) texto += r_players[i].player_username+"\n";
+						if (!exists) players.push(r_players[i]);
 					}
-					callback({status: "OK", data: {players: texto}});
+					callback({status: "OK", data: {players: players}});
 				});
 			});
 		});

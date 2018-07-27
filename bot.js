@@ -1,3 +1,6 @@
+//Override promises
+process.env.NTBA_FIX_319 = true;
+
 //Cargamos los modulos necesarios
 const TelegramBot = require('node-telegram-bot-api');
 const privatedata = require('./privatedata');
@@ -7,6 +10,10 @@ const emoji = require('node-emoji').emoji;
 //Iniciamos el bot y mongodb
 const bot = new TelegramBot(privatedata.token, {polling: true});
 
+bot.on('polling_error', (error) => {
+  console.log(error);  // => 'EFATAL'
+});
+
 //Iniciamos el Bot
 var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	if (res.status == "ERR") {
@@ -15,7 +22,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	}
 	//////////////////////////////EVENTOS//////////////////////////////
 	//Si el comando es /start (por privado):
-	bot.onText(new RegExp("^\\/start(?:@"+privatedata.botalias+")?", "i"), function (msg, match) {	
+	bot.onText(new RegExp("^\\/start(?:@"+privatedata.botalias+")?", "i"), (msg, match) => {
 		//Detectamos si el mensaje recibido es por un grupo
 		if (msg.chat.type != "private") {
 			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un privado.");
@@ -41,7 +48,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 		});
 	});
 	//Si el comando es /refresh (por privado):
-	bot.onText(new RegExp("^\\/refresh(?:@"+privatedata.botalias+")?", "i"), function (msg, match) {	
+	bot.onText(new RegExp("^\\/refresh(?:@"+privatedata.botalias+")?", "i"), (msg, match) => {
 		//Detectamos si el mensaje recibido es por un grupo
 		if (msg.chat.type != "private") {
 			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un privado.");
@@ -66,7 +73,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	});
 
 	//Si el comando es /create
-	bot.onText(new RegExp("^\\/create(?:@"+privatedata.botalias+")?", "i"), function (msg, match) {	
+	bot.onText(new RegExp("^\\/create(?:@"+privatedata.botalias+")?", "i"), (msg, match) => {
 		//Detectamos si el mensaje recibido es por un grupo
 		if (msg.chat.type == "private") {
 			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un grupo.");
@@ -777,79 +784,78 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						bot.editMessageText("Has votado: "+res.data.vote.card_text, opts);
 						//Si ha sido el ultimo en votar...
 						if (res.status != "VOTED") {
-							bot.sendMessage(res.data.player.player_uid, "Has ganado la ronda con tu carta: \n"+res.data.cards.card_text+"\nTienes "+(res.data.player.points+1)+" puntos.");
-							bot.sendMessage(res.data.game.room_id, res.data.player.player_username+" ha ganado la ronda con su carta: \n"+res.data.cards.card_text+"\n"+
-								"Tiene "+(parseInt(res.data.player.points)+1)+" puntos.");
+							bot.sendMessage(res.data.player.player_uid, 
+								"Has ganado la ronda con tu carta: \n"+res.data.cards.card_text+"\n"+
+								"Tienes "+(res.data.player.points+1)+" puntos."
+							);
+							bot.sendMessage(res.data.game.room_id, 
+								res.data.player.player_username+" ha ganado la ronda con su carta: \n"+res.data.cards.card_text+"\n"+
+								"Tiene "+(parseInt(res.data.player.points)+1)+" puntos."
+							);
 							//Determinamos el ganador de la ronda
 							game.roundWinner(res.data.player, res.data.game, function (resp) {
-								//Ha terminado la partida
-								if (resp.status == "ERR") {
+								if (resp.status == "ERR") { //Capturamos errores
 									bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
 									console.log(resp);
 									return;
-								}
-								game.db.remove('wcardsxgame', {game_id: game.db.getObjectId(res.data.game._id)});
-								game.db.remove('bcardsxgame', {game_id: game.db.getObjectId(res.data.game._id)});
-								game.db.remove('cardsxround', {game_id: game.db.getObjectId(res.data.game._id)});
-								game.db.remove('votesxround', {game_id: game.db.getObjectId(res.data.game._id)});
-								game.db.remove('votedeletexgame', {game_id: game.db.getObjectId(res.data.game._id)});
-								setTimeout(function(){
-									var opts = {
-										chat_id: res.data.game.room_id, 
-										message_id: res.data.game.msg_id
-									};
-									bot.editMessageText("Partida finalizada.\n"+res.data.player.player_username+" ha ganado la partida.", opts);
-									bot.sendMessage(res.data.player.player_uid, emoji.confetti_ball+" Has ganado la partida!! "+emoji.confetti_ball);
-									bot.sendMessage(res.data.game.room_id, res.data.player.player_username+" ha ganado la partida!! "+emoji.confetti_ball+" "+emoji.confetti_ball);
-								}, 300);
-							}, function (resp) {
-								//No ha terminado la partida
-								if (resp.status == "ERR") {
-									bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
-									console.log(resp);
-									return;
-								}
-								//E iniciamos la siguiente ronda
-								game.startRound(resp.msg.game, res.data.players, function (user_id, blackcard, cards_array, cards_string){
-									var optsarray = [];
-									for (var card of cards_array){
-										optsarray.push([{text: card.text, callback_data: "card_"+data[1]+"_"+card.id}]);
-									}
-									//Enviamos la cartas a cada jugador
-									var opts = {
-										reply_markup: JSON.stringify({
-											inline_keyboard: optsarray
-										})
-									};
-									bot.sendMessage(user_id, blackcard+"\nElige una opcion:\n"+cards_string, opts);
-								}, function (r_res){
-									//Enviamos la carta y el lider por el grupo
-									if (r_res.status == "ERR") {
-										bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
-										console.log(r_res);
-										return;
-									}
-									bot.sendMessage(res.data.game.room_id, "La carta negra de esta ronda es: \n"+r_res.data.blackcard);
-									if (r_res.data.game_type == "clasico") {
-										game.getUser(resp.msg.game.president_id, function (u_res){
-											//Capturamos errores
-											if (u_res.status == "ERR") {
-												switch (u_res.msg) {
-													case "ERR_NOT_IN_GAME":
-														bot.sendMessage(msg.chat.id, "Debes hablar conmigo (@"+privatedata.botalias+") por privado y mandar el mensaje /start.");
-													break;
-													default:
-														bot.sendMessage(msg.chat.id, "Error inesperado.");
-														console.log(u_res);
-													break;
+								} else if (resp.status == "END_GAME"){ //Ha terminado la partida
+									game.db.remove('wcardsxgame', {game_id: game.db.getObjectId(res.data.game._id)});
+									game.db.remove('bcardsxgame', {game_id: game.db.getObjectId(res.data.game._id)});
+									game.db.remove('cardsxround', {game_id: game.db.getObjectId(res.data.game._id)});
+									game.db.remove('votesxround', {game_id: game.db.getObjectId(res.data.game._id)});
+									game.db.remove('votedeletexgame', {game_id: game.db.getObjectId(res.data.game._id)});
+									setTimeout(function(){
+										var opts = {
+											chat_id: res.data.game.room_id, 
+											message_id: res.data.game.msg_id
+										};
+										bot.editMessageText("Partida finalizada.\n"+res.data.player.player_username+" ha ganado la partida.", opts);
+										bot.sendMessage(res.data.player.player_uid, emoji.confetti_ball+" Has ganado la partida!! "+emoji.confetti_ball);
+										bot.sendMessage(res.data.game.room_id, res.data.player.player_username+" ha ganado la partida!! "+emoji.confetti_ball+" "+emoji.confetti_ball);
+									}, 300);
+								} else { //No ha terminado la partida
+									//Iniciamos la siguiente ronda
+									game.startRound(resp.msg.game, res.data.players, function (user_id, blackcard, cards_array, cards_string){
+										var optsarray = [];
+										for (var card of cards_array){
+											optsarray.push([{text: card.text, callback_data: "card_"+data[1]+"_"+card.id}]);
+										}
+										//Enviamos la cartas a cada jugador
+										var opts = {
+											reply_markup: JSON.stringify({
+												inline_keyboard: optsarray
+											})
+										};
+										bot.sendMessage(user_id, blackcard+"\nElige una opcion:\n"+cards_string, opts);
+									}, function (r_res){
+										//Enviamos la carta y el lider por el grupo
+										if (r_res.status == "ERR") {
+											bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
+											console.log(r_res);
+											return;
+										}
+										bot.sendMessage(res.data.game.room_id, "La carta negra de esta ronda es: \n"+r_res.data.blackcard);
+										if (r_res.data.game_type == "clasico") {
+											game.getUser(resp.msg.game.president_id, function (u_res){
+												//Capturamos errores
+												if (u_res.status == "ERR") {
+													switch (u_res.msg) {
+														case "ERR_NOT_IN_GAME":
+															bot.sendMessage(msg.chat.id, "Debes hablar conmigo (@"+privatedata.botalias+") por privado y mandar el mensaje /start.");
+														break;
+														default:
+															bot.sendMessage(msg.chat.id, "Error inesperado.");
+															console.log(u_res);
+														break;
+													}
+													return;
 												}
-												return;
-											}
-											bot.sendMessage(u_res.msg.user_id, "Eres el lider de esta ronda.");
-											bot.sendMessage(res.data.game.room_id, "El lider de esta ronda es: "+u_res.msg.username);
-										});
-									}
-								});
+												bot.sendMessage(u_res.msg.user_id, "Eres el lider de esta ronda.");
+												bot.sendMessage(res.data.game.room_id, "El lider de esta ronda es: "+u_res.msg.username);
+											});
+										}
+									});
+								}
 							});
 						}
 					});
@@ -876,7 +882,11 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 							}
 							return;
 						}
-						bot.sendMessage(msg.message.chat.id, "Aun no han elegido carta:\n"+res.data.players);
+						var txt = "";
+						for (i = 0; i < res.data.players.length; i++){
+							txt += res.data.players[i].player_username+"\n";
+						}
+						bot.sendMessage(msg.message.chat.id, "Aun no han elegido carta:\n"+txt);
 					});
 				break;
 				//Peticion para comprobar quien falta por votar
@@ -904,7 +914,11 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 							}
 							return;
 						}
-						bot.sendMessage(msg.message.chat.id, "Aun no han votado:\n"+res.data.players);
+						var txt = "";
+						for (i = 0; i < res.data.players.length; i++){
+							txt += res.data.players[i].player_username+"\n";
+						}
+						bot.sendMessage(msg.message.chat.id, "Aun no han votado:\n"+txt);
 					});
 				break;
 				//Comandos de creacion de diccionario
@@ -1093,7 +1107,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 		});
 	});
 	//Si el comando es /newdictionary
-	bot.onText(new RegExp("^\\/newdictionary(?:@"+privatedata.botalias+")?", "i"), function (msg, match) { 
+	bot.onText(new RegExp("^\\/newdictionary(?:@"+privatedata.botalias+")?", "i"), (msg, match) => { 
 		//Detectamos si el mensaje recibido es por privado
 		if (msg.chat.type != "private") {
 			bot.sendMessage(msg.chat.id, "Por favor envia este comando por privado.");
@@ -1170,7 +1184,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	});
 
 	//Si el comando es /listdicionaries
-	bot.onText(new RegExp("^\\/listdictionaries(?:@"+privatedata.botalias+")?", "i"), function (msg, match) {
+	bot.onText(new RegExp("^\\/listdictionaries(?:@"+privatedata.botalias+")?", "i"), (msg, match) => {
 				bot.sendMessage(msg.chat.id, "Si.");
 		//Buscamos en la tabla diccionarios
 		game.db.find('dictionaries', {finished:1}, function(r_dic) {
@@ -1187,7 +1201,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	});
 
 	//Add cards (si el comando no empieza por /)
-	bot.onText(new RegExp("^(?!\/).+", "i"), function (msg, match) {
+	bot.onText(new RegExp("^(?!\/).+", "i"), (msg, match) => {
 		//Detectamos si el mensaje recibido es por privado
 		if (msg.chat.type != "private") {
 			bot.sendMessage(msg.chat.id, "Por favor envia este comando por privado.");
@@ -1264,7 +1278,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	});
 
 	//Si el comando es /rememberMessage
-	bot.onText(new RegExp("^\\/rememberMessage(?:@"+privatedata.botalias+")?", "i"), function (msg, match) {
+	bot.onText(new RegExp("^\\/rememberMessage(?:@"+privatedata.botalias+")?", "i"), (msg, match) => {
 		//Detectamos si el mensaje recibido es por grupo
 		if (msg.chat.type == "private") {
 			bot.sendMessage(msg.chat.id, "Por favor envia este comando por un grupo.");
@@ -1328,7 +1342,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	});
 
 	//Send message to users
-	bot.onText(new RegExp("^\\/sendMessage(?:@"+privatedata.botalias+")?\\s(.*)", "i"), function (msg, match) {
+	bot.onText(new RegExp("^\\/sendMessage(?:@"+privatedata.botalias+")?\\s(.*)", "i"), (msg, match) => {
 		if (msg.chat.type == "private") {
 			if (msg.chat.id == privatedata.ownerid) {
 				game.db.find('players', {}, function(r_pla) {
@@ -1346,7 +1360,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	});
 
 	//Deletes all the games
-	bot.onText(new RegExp("^\\/resetGames(?:@"+privatedata.botalias+")?", "i"), function (msg, match) {
+	bot.onText(new RegExp("^\\/resetGames(?:@"+privatedata.botalias+")?", "i"), (msg, match) => {
 		if (msg.chat.type == "private") {
 			if (msg.chat.id == privatedata.ownerid) {
 				game.db.remove('games', {});
@@ -1371,7 +1385,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	});
 
 	//Show the help message
-	bot.onText(new RegExp("^\/help(?:@"+privatedata.botalias+")?$", "i"), function (msg, match) {
+	bot.onText(new RegExp("^\/help(?:@"+privatedata.botalias+")?$", "i"), (msg, match) => {
 		bot.sendMessage(msg.chat.id, 
 			"Bienvenido a la ayuda de "+privatedata.botname+" versión "+privatedata.botversion+".\n"+
 			"Puedes consultar la ayuda en el siguiente enlace: http://telegra.ph/Manual-del-bot-Cartas-Contra-la-Humanidad-cclhbot-01-31\n"+

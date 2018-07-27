@@ -5,13 +5,15 @@ var MongoClient = mongodb.MongoClient;
 var dbm = Db.prototype;
 //////////CONSTRUCTOR//////////
 function Db(url, db, callback) {
-	var g_object = this;
-	g_object.dbusr = url;
-	g_object.dbname = db;
-	MongoClient.connect(url, function (err, database) {
-		if (err) callback({status: "ERR", msg: "ERR_CONNECT_DATABASE"});
-		else {
-			const dbs = database.db(g_object.dbname)
+	g_object = this;
+	g_object.db_url = url;
+	g_object.db_name = db;
+	MongoClient.connect(g_object.db_url, {useNewUrlParser: true}, function (err, database) {
+		if (err) {
+			callback({status: "ERR", msg: "ERR_CONNECT_DATABASE"});
+			console.log("error while connecting: "+err);
+		} else {
+			const dbs = database.db(g_object.db_name);
 			g_object.db = dbs;
 			callback({status: "OK"});
 		}
