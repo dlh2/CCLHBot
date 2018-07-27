@@ -1,3 +1,5 @@
+
+//ToDo: Al consultar la BD usar el callback de 2 parametros (err, response) para propagar errores y usar el metodo del return; para capturarlos
 var mongodb = require('mongodb');
 var ObjectID = require('mongodb').ObjectID;
 //////////CREATE CLASS//////////
