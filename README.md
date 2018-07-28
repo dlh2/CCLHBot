@@ -1,5 +1,8 @@
 # CCLHBot
+
 Bot de Telegram del juego Cartas Contra la Humanidad (versión 0.9.0)
+
+Puedes acceder a el desde aqui: http://t.me/cclhbot
 
 # ToDo
 
