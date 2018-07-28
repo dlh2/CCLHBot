@@ -23,7 +23,17 @@ function Db(url, db, callback) {
 dbm.getObjectId = function(id){
 	return new ObjectID(id);
 };
-dbm.find = function(table, data, callback) {
+//Find
+dbm.findOne = function(table, data, callback) {
+	var g_object = this;
+    g_object.db.collection(table).findOne(data, function (err, r) {
+		if (err) {
+			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_SEARCH_TABLE", table: table});
+			console.log(err);
+		} else if (typeof callback == "function") callback(r);
+	});
+};
+dbm.findMany = function(table, data, callback) {
 	var g_object = this;
     g_object.db.collection(table).find(data).toArray(function (err, r) {
 		if (err) {
@@ -32,62 +42,8 @@ dbm.find = function(table, data, callback) {
 		} else if (typeof callback == "function") callback(r);
 	});
 };
-dbm.limitFind = function(table, data, size, callback) {
-	var g_object = this;
-    g_object.db.collection(table).find(data).limit(size).toArray(function (err, r) {
-		if (err) {
-			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_SEARCH_TABLE", table: table});
-			console.log(err);
-		} else if (typeof callback == "function") callback(r);
-	});
-};
-dbm.sortFind = function(table, find_data, sort_data, size, callback) {
-	var g_object = this;
-     g_object.db.collection(table).find(find_data).sort(sort_data).limit(size).toArray(function (err, r) {
-		if (err) {
-			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_SORT_TABLE", table: table});
-			console.log(err);
-		} else if (typeof callback == "function") callback(r);
-	});
-};
-dbm.groupSum = function (table, field, match_data, callback){
-	var g_object = this;
-	g_object.db.collection(table).aggregate([{$match: match_data}, {$group: {_id: null, sum: {$sum: "$"+field}}}]).toArray(function(err, r) {
-		if (err) {
-			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_GROUP_TABLE", table: table});
-			console.log(err);
-		} else if (typeof callback == "function") callback(r);
-   });
-};
-dbm.groupCount = function (table, field, match_data, callback){
-	var g_object = this;
-	g_object.db.collection(table).aggregate([{$match: match_data}, {$group: {_id: "$"+field, count: {$sum: 1}}}]).toArray(function(err, r) {
-		if (err) {
-			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_GROUP_TABLE", table: table});
-			console.log(err);
-		} else if (typeof callback == "function") callback(r);
-   });
-};
-dbm.getMax = function (table, field, match_data, callback){
-	var g_object = this;
-	//db.things.aggregate([ {$project:{ id: "$userId", count: {$size:{"$ifNull":["$Product",[]]} } }}, {$sort : {count : -1}}, { $limit : 1 } ])
-	g_object.db.collection(table).aggregate([{$match: match_data}, {$group: {_id: "$"+field, count: {$sum: 1}}}, {$sort: {count: -1}}, {$limit: 1}]).toArray(function(err, r) {
-		if (err) {
-			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_GROUP_TABLE", table: table});
-			console.log(err);
-		} else if (typeof callback == "function") callback(r);
-   });
-}
-dbm.count = function (table, match_data, callback){
-	var g_object = this;
-	g_object.db.collection(table).find(match_data).count(function(err, r) {
-		if (err) {
-			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_COUNT_TABLE", table: table});
-			console.log(err);
-		} else if (typeof callback == "function") callback(r);
-	});
-};
-dbm.insert = function (table, data, callback){
+//Insert
+dbm.insertOne = function (table, data, callback){
 	var g_object = this;
 	g_object.db.collection(table).insertOne(data, function (err, r) {
 		if (err) {
@@ -105,7 +61,8 @@ dbm.insertMany = function (table, data, callback){
 		} else if (typeof callback == "function") callback(r);
 	});
 };
-dbm.update = function (table, find_data, new_data, callback){
+//Update
+dbm.updateOne = function (table, find_data, new_data, callback){
 	var g_object = this;
 	g_object.db.collection(table).updateOne(find_data, {$set: new_data}, function(err, r) {
 		if (err) {
@@ -129,6 +86,7 @@ dbm.updateMany = function (table, find_data, new_data, callback){
 		}
 	});
 };
+//Remove
 dbm.remove = function (table, data, callback){
 	var g_object = this;
 	g_object.db.collection(table).remove(data, function(err, r) {
@@ -141,6 +99,62 @@ dbm.remove = function (table, data, callback){
 		}
 	});
 };
+//Extended find
+dbm.limitFind = function(table, data, size, callback) {
+	var g_object = this;
+    g_object.db.collection(table).find(data).limit(size).toArray(function (err, r) {
+		if (err) {
+			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_SEARCH_TABLE", table: table});
+			console.log(err);
+		} else if (typeof callback == "function") callback(r);
+	});
+};
+dbm.sortFind = function(table, find_data, sort_data, size, callback) {
+	var g_object = this;
+     g_object.db.collection(table).find(find_data).sort(sort_data).limit(size).toArray(function (err, r) {
+		if (err) {
+			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_SORT_TABLE", table: table});
+			console.log(err);
+		} else if (typeof callback == "function") callback(r);
+	});
+};
+dbm.count = function (table, match_data, callback){
+	var g_object = this;
+	g_object.db.collection(table).find(match_data).count(function(err, r) {
+		if (err) {
+			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_COUNT_TABLE", table: table});
+			console.log(err);
+		} else if (typeof callback == "function") callback(r);
+	});
+};
+//Aggregations
+dbm.groupSum = function (table, field, match_data, callback){
+	var g_object = this;
+	g_object.db.collection(table).aggregate([{$match: match_data}, {$group: {_id: null, sum: {$sum: "$"+field}}}]).toArray(function(err, r) {
+		if (err) {
+			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_GROUP_TABLE", table: table});
+			console.log(err);
+		} else if (typeof callback == "function") callback(r);
+   });
+};
+dbm.groupCount = function (table, field, match_data, callback){
+	var g_object = this;
+	g_object.db.collection(table).aggregate([{$match: match_data}, {$group: {_id: "$"+field, count: {$sum: 1}}}]).toArray(function(err, r) {
+		if (err) {
+			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_GROUP_TABLE", table: table});
+			console.log(err);
+		} else if (typeof callback == "function") callback(r);
+   });
+};
+dbm.getMax = function (table, field, match_data, callback){
+	var g_object = this;
+	g_object.db.collection(table).aggregate([{$match: match_data}, {$group: {_id: "$"+field, count: {$sum: 1}}}, {$sort: {count: -1}}, {$limit: 1}]).toArray(function(err, r) {
+		if (err) {
+			if (typeof callback == "function") callback({status: "ERR", msg: "ERR_GROUP_TABLE", table: table});
+			console.log(err);
+		} else if (typeof callback == "function") callback(r[0]);
+   });
+}
 
 //Export the db
 module.exports = Db;
