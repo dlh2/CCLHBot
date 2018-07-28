@@ -214,7 +214,7 @@ method.startGame = function (player_id, game_id, callback){
 			callback({status: "ERR", msg: "ERR_ALREADY_STARTED"});
 			return;
 		}
-		g_object.db.find('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
+		g_object.db.findMany('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
 			if (parseInt(r_game.status) == 0){
 				callback({status: "ERR", msg: "ERR_NOT_ENOUGHT_PLAYERS", extra: {current_players: r_players.length, max_players: r_game.n_players}});
 				return;
@@ -440,7 +440,7 @@ method.sendCard = function (player_id, game_id, card_id, callback) {
 										var textgroup = "";
 										var array = [];
 										//Creamos el array con los votos
-										g_object.db.find('cardsxround', {game_id: g_object.db.getObjectId(game_id)}, function(r_cards){
+										g_object.db.findMany('cardsxround', {game_id: g_object.db.getObjectId(game_id)}, function(r_cards){
 											for (i = 0; i<r_cards.length; i++){
 												textgroup += (i+1)+". "+r_cards[i].card_text+"\n";
 												array.push({"id": r_cards[i].card_id, "text": r_cards[i].card_text});
@@ -498,7 +498,7 @@ method.sendVote = function (player_id, game_id, card_id, callback) {
 						callback({status: "ERR", msg: "ERR_CARD_NOT_FOUND"});
 						return;
 					}
-					g_object.db.find('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
+					g_object.db.findMany('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
 						if (!r_players.length){
 							callback({status: "ERR", msg: "ERR_UNEXPECTED_PLAYERS"});
 							return;
@@ -559,8 +559,8 @@ method.checkCards = function (game_id, callback){
 			callback({status: "ERR", msg: "ERR_GAME_NOT_STARTED"});
 			return;
 		}
-		g_object.db.find('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
-			g_object.db.find('cardsxround', {game_id: g_object.db.getObjectId(game_id)}, function (r_cards){
+		g_object.db.findMany('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
+			g_object.db.findMany('cardsxround', {game_id: g_object.db.getObjectId(game_id)}, function (r_cards){
 				if (r_players.length == r_cards.length){
 					callback({status: "ERR", msg: "ERR_USER_ALREADY_RESPONSED"});
 					return;
@@ -594,9 +594,9 @@ method.checkVotes = function (game_id, callback){
 			callback({status: "ERR", msg: "ERR_GAME_NOT_STARTED"});
 			return;
 		}
-		g_object.db.find('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
-			g_object.db.find('cardsxround', {game_id: g_object.db.getObjectId(game_id)}, function (r_cards){
-				g_object.db.find('votesxround', {game_id: g_object.db.getObjectId(game_id)}, function (r_votes){
+		g_object.db.findMany('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
+			g_object.db.findMany('cardsxround', {game_id: g_object.db.getObjectId(game_id)}, function (r_cards){
+				g_object.db.findMany('votesxround', {game_id: g_object.db.getObjectId(game_id)}, function (r_votes){
 					if (r_players.length != r_cards.length){
 						callback({status: "ERR", msg: "ERR_CARDS_UNSENT"});
 						return;

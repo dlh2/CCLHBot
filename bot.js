@@ -10,6 +10,7 @@ const emoji = require('node-emoji').emoji;
 //Iniciamos el bot y mongodb
 const bot = new TelegramBot(privatedata.token, {polling: true});
 
+//Debug
 bot.on('polling_error', (error) => {
   console.log(error);  // => 'EFATAL'
 });
@@ -336,7 +337,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 											return;
 										}
 										bot.answerCallbackQuery(msg.id, {"text": "Seleccionado " + dictionary_res.name + " como diccionario de cartas."});
-										game.db.find('blackcards', {dictionary: dictionary_res._id}, function (array){
+										game.db.findMany('blackcards', {dictionary: dictionary_res._id}, function (array){
 											array = game.shuffleArray(array);
 											newarray = [];
 											for (i = 0; i < array.length; i++){
@@ -368,6 +369,9 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 											//Capturamos errores
 											if (player_res.status == "ERR") {
 												switch (player_res.msg) {
+													case "ERR_ALREADY_CREATING":
+														//None
+													break;
 													default:
 														bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
 														console.log(player_res);
@@ -410,10 +414,10 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									bot.answerCallbackQuery(msg.id, {"text": "La partida ya está llena."});
 								break;
 								case "ERR_ALREADY_PLAYING":
-									bot.answerCallbackQuery(msg.id, {"text": "No puedes crear la partida, ya estas participando en otra partida."});
+									bot.answerCallbackQuery(msg.id, {"text": "No puedes unirte a la partida porque ya estas participando en otra."});
 								break;
 								case "ERR_ALREADY_CREATING":
-									bot.answerCallbackQuery(msg.id, {"text": "No puedes crear la partida, ya estas creando otra partida."});
+									bot.answerCallbackQuery(msg.id, {"text": "No puedes unirte la partida, estas creando otra partida."});
 								break;
 								default:
 									bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
@@ -475,11 +479,12 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 							return;
 						}
 						//Guardamos las cartas
-						game.db.find('whitecards', {dictionary: game_res.msg.game.dictionary}, function (array){
-							array = game.shuffleArray(array).slice(0, parseInt(game_res.msg.game.n_players)*45);
-							newarray = [];
+						game.db.findMany('whitecards', {dictionary: game_res.msg.game.dictionary}, function (array){
+							var cards_per_player = parseInt(game_res.msg.game.n_players) * privatedata.cardsperround;
+							array = game.shuffleArray(array).slice(0, cards_per_player * parseInt(game_res.msg.game.n_cardstowin));
+							var newarray = [];
 							for (i = 0; i < game_res.msg.game.n_players; i++){
-								for (j = i*45; j < (i*45)+45; j++){
+								for (j = i*cards_per_player; j < (i*cards_per_player)+cards_per_player; j++){
 									newarray.push({card_text: array[j].card_text, game_id: game_res.msg.game._id, player_id: game_res.msg.players[i].player_id, used: 0});
 								}
 							}
@@ -627,7 +632,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									//Actualiza la base de datos para eliminar al jugador y reducir el tamaño de la partida
 									game.db.updateOne('games', {game_id: game.db.getObjectId(data[1])}, { "n_players": (parseInt(res.msg.n_players)-1)}, function (){
 										game.db.remove('playersxgame', {player_id: res.msg._id}, function (){
-											game.db.find('playersxgame', {game_id: game.db.getObjectId(data[1])}, function (response){
+											game.db.findMany('playersxgame', {game_id: game.db.getObjectId(data[1])}, function (response){
 												if (!response.length){
 													bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
 													return;
@@ -645,7 +650,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 							});
 						} else if (res.status == "DELETE_PLAYER_NOT_STARTED"){ //Elimina al usuario con la partida sin empezar
 							//Actualiza la base de datos para eliminar al jugador
-							game.db.find('playersxgame', {game_id: game.db.getObjectId(data[1])}, function (r_players){
+							game.db.findMany('playersxgame', {game_id: game.db.getObjectId(data[1])}, function (r_players){
 								if (!r_players.length){
 									bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
 									return;
@@ -918,7 +923,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									reply_markup: {force_reply: true}
 								};
 								bot.sendMessage(msg.message.chat.id, "Dime el apodo de tu colaborador (@apodo):", opts).then(resp => {
-									var resp = bot.onReplyToMessage(resp.chat.id, resp.message_id, function (reply){
+									bot.onReplyToMessage(resp.chat.id, resp.message_id, function (reply){
 										game.db.findOne('players', {username: {'$regex': "("+reply.text+")"}}, function (player_res){
 											if (!player_res){
 												bot.answerCallbackQuery(msg.id, {"text": "No existe ningun usuario con ese nombre."});
@@ -929,19 +934,23 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 													bot.answerCallbackQuery(msg.id, {"text": "Ya estas colaborando en un diccionario."});
 													return;
 												}
-												game.db.insertOne('dictionary_collabs', {dictionary_id: r_dic._id, collab_id: player_res._id, collab_uid: res.msg.user_id, collab_alias: reply.text}, function(){
-													bot.sendMessage(msg.message.chat.id, "Se ha añadido a "+reply.text);
-													//Y se le notifica por privado
-													var opts = {
-														reply_markup: JSON.stringify({
-															inline_keyboard: [
-																[{text: "Añadir cartas blancas", callback_data: "dictionary_addw_"+r_dic._id}],
-																[{text: "Añadir cartas negras", callback_data: "dictionary_addb_"+r_dic._id}]
-															]
-														})
-													};
-													bot.sendMessage(player_res.user_id, "El usuario "+res.msg.username+" te ha añadido como colaborador en su diccionario.", opts);
+												//Se le notifica por privado al colaborador
+												bot.sendMessage(player_res.user_id, "El usuario "+res.msg.username+" te ha añadido como colaborador en su diccionario '"+r_dic.name+"'.");
+												//Y se le da la posibilidad de añadir cartas
+												var opts = {
+													reply_markup: JSON.stringify({
+														inline_keyboard: [
+															[{text: "Añadir cartas blancas", callback_data: "dictionary_addw_"+r_dic._id}],
+															[{text: "Añadir cartas negras", callback_data: "dictionary_addb_"+r_dic._id}]
+														]
+													})
+												};
+												bot.sendMessage(player_res.user_id, "Se deben añadir al menos "+privatedata.minwhitecards+" cartas blancas y "+privatedata.minblackcards+" cartas negras para completar el diccionario:", opts).then(resp => {
+													game.db.insertOne('dictionary_collabs', {msg_id: resp.message_id, dictionary_id: r_dic._id, collab_id: player_res._id, collab_uid: res.msg.user_id, collab_alias: reply.text}, function(){
+														bot.sendMessage(msg.message.chat.id, "Se ha añadido a "+reply.text+" como colaborador");
+													});
 												});
+												bot.answerCallbackQuery(msg.id, {"text": "Colaborador añadido."});
 											});
 										});
 										bot.removeReplyListener(resp);
@@ -949,74 +958,35 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 								});
 							});
 						break;
-						//Add white cards
-						case "addw":
-							game.db.findOne('dictionaries', {_id: game.db.getObjectId(data[2]), finished: 0}, function(r_dic) {
+						//Completar diccionario
+						case "end":
+							game.db.findOne('dictionaries', {_id: game.db.getObjectId(data[2]), creator_id: res.msg._id, finished: 0}, function(r_dic) {
 								if (!r_dic) {
-									bot.answerCallbackQuery(msg.id, {"text": "No existe el diccionario."});
+									bot.answerCallbackQuery(msg.id, {"text": "No existe el dicionario."});
 									return;
 								}
-								game.db.count('dictionary_collabs', {dictionary_id: r_dic._id, collab_id: res.msg._id}, function (collab_count){
-									if (!collab_count){
-										bot.answerCallbackQuery(msg.id, {"text": "No estas colaborando en este diccionario."});
+								game.db.count('blackcards', {dictionary: r_dic._id}, function(bca) {
+									if (bca < privatedata.minblackcards){
+										bot.answerCallbackQuery(msg.id, {"text": "Aun no se ha completado el diccionario de cartas negras."});
 										return;
 									}
-									game.db.updateOne('dictionary_collabs', {collab_id: game.db.getObjectId(res.msg._id)}, {status: 1}, function (res){
-										var opts = {
-											reply_markup: JSON.stringify({
-												inline_keyboard: [
-													[{text: "Dejar de añadir cartas", callback_data: "dictionary_addstop_"+r_dic._id}]
-												]
-											})
-										};
-										bot.sendMessage(msg.message.chat.id, "Modo añadir cartas blancas activado.", opts);
-									});
-								});
-							});
-						break;
-						//Add black cards
-						case "addb":
-							game.db.findOne('dictionaries', {_id: game.db.getObjectId(data[2]), finished: 0}, function(r_dic) {
-								if (!r_dic) {
-									bot.answerCallbackQuery(msg.id, {"text": "No existe el diccionario."});
-									return;
-								}
-								game.db.count('dictionary_collabs', {dictionary_id: r_dic._id, collab_id: res.msg._id}, function (collab_count){
-									if (!collab_count){
-										bot.answerCallbackQuery(msg.id, {"text": "No estas colaborando en este diccionario."});
-										return;
-									}
-									game.db.updateOne('dictionary_collabs', {collab_id: game.db.getObjectId(res.msg._id)}, {status: 2}, function (res){
-										var opts = {
-											reply_markup: JSON.stringify({
-												inline_keyboard: [
-													[{text: "Dejar de añadir cartas", callback_data: "dictionary_addstop_"+r_dic._id}]
-												]
-											})
-										};
-										bot.sendMessage(msg.message.chat.id, "Modo añadir cartas negras activado.", opts);
-									});
-								});
-							});
-						break;
-						//Stop adding cards
-						case "addstop":
-							game.db.findOne('dictionaries', {_id: game.db.getObjectId(data[2]), finished: 0}, function(r_dic) {
-								if (!r_dic) {
-									bot.answerCallbackQuery(msg.id, {"text": "No existe el diccionario."});
-									return;
-								}
-								game.db.findOne('dictionary_collabs', {dictionary_id: r_dic._id, collab_id: res.msg._id}, function(collab){
-									if (!collab){
-										bot.answerCallbackQuery(msg.id, {"text": "No estas colaborando en este diccionario."});
-										return;
-									}
-									if (collab.status == 0){
-										bot.answerCallbackQuery(msg.id, {"text": "No estas agregando cartas al diccionario."});
-										return;
-									}
-									game.db.updateOne('players', {_id: game.db.getObjectId(res.msg._id)}, {status: 0}, function (res){
-										bot.sendMessage(msg.message.chat.id, "Modo añadir cartas desactivado.");
+									game.db.count('whitecards', {dictionary: r_dic._id}, function(wca) {
+										if (wca < privatedata.minwhitecards){
+											bot.answerCallbackQuery(msg.id, {"text": "Aun no se ha completado el diccionario de cartas blancas."});
+											return;
+										}
+										game.db.updateOne('dictionaries', {_id: game.db.getObjectId(r_dic._id)}, {finished: 1}, function (){
+											//Enviamos mensaje a los colaboradores y los borramos
+											game.db.findMany('dictionary_collabs', {dictionary_id: r_dic._id}, function(collab_res){
+												for (var row of collab_res){
+													if (row.collab_uid != msg.message.chat.id) bot.editMessageText("El creador ha completado el diccionario.", {chat_id: row.collab_uid, message_id: row.msg_id});
+												}
+											});
+											game.db.remove('dictionary_collabs', {dictionary_id: game.db.getObjectId(r_dic._id)}, function(){});
+											//Editamos el mensaje principal
+											bot.editMessageText("Se ha completado el diccionario.", {chat_id: r_dic.creator_uid, message_id: r_dic.msg_id});
+											bot.answerCallbackQuery(msg.id, {"text": "Diccionario completado."});
+										});
 									});
 								});
 							});
@@ -1034,9 +1004,9 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 										return;
 									}
 									//Enviamos mensaje a los colaboradores
-									game.db.find('dictionary_collabs', {dictionary_id: r_dic._id}, function(collab_res){
+									game.db.findMany('dictionary_collabs', {dictionary_id: r_dic._id}, function(collab_res){
 										for (var row of collab_res){
-											bot.sendMessage(row.collab_uid, "El creador ha borrado el diccionario");
+											bot.editMessageText("El creador ha borrado el diccionario.", {chat_id: row.collab_uid, message_id: row.msg_id});
 										}
 									});
 									//Borramos los colaboradores y las cartas
@@ -1044,39 +1014,96 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									game.db.remove('whitecards', {dictionary: r_dic._id});
 									game.db.remove('blackcards', {dictionary: r_dic._id});
 									//Editamos el mensaje principal
-									bot.editMessageText("Se ha borrado el diccionario.", {chat_id: msg.message.chat.id, message_id: msg.message.message_id});
+									bot.editMessageText("Se ha borrado el diccionario.", {chat_id: r_dic.creator_uid, message_id: r_dic.msg_id});
+									bot.answerCallbackQuery(msg.id, {"text": "Diccionario borrado."});
 								});
 							});
 						break;
-						//Completar diccionario
-						case "end":
-							game.db.findOne('dictionaries', {_id: game.db.getObjectId(data[2]), creator_id: res.msg._id, finished: 0}, function(r_dic) {
+						//Add white cards
+						case "addw":
+							game.db.findOne('dictionaries', {_id: game.db.getObjectId(data[2]), finished: 0}, function(r_dic) {
 								if (!r_dic) {
-									bot.answerCallbackQuery(msg.id, {"text": "No existe el dicionario."});
+									bot.answerCallbackQuery(msg.id, {"text": "No existe el diccionario."});
 									return;
 								}
-								game.db.count('blackcards', {dictionary: r_dic._id}, function(bca) {
-									if (bca < 50){
-										bot.sendMessage(msg.message.chat.id, "Aun no se ha completado el diccionario de cartas negras.");
+								game.db.findOne('dictionary_collabs', {dictionary_id: r_dic._id, collab_id: res.msg._id}, function (collab_res){
+									if (!collab_res){
+										bot.answerCallbackQuery(msg.id, {"text": "No estas colaborando en este diccionario."});
 										return;
 									}
-									game.db.count('whitecards', {dictionary: r_dic._id}, function(wca) {
-										if (wca < 405){
-											bot.sendMessage(msg.message.chat.id, "Aun no se ha completado el diccionario de cartas blancas.");
-											return;
-										}
-										game.db.updateOne('dictionaries', {_id: game.db.getObjectId(r_dic._id)}, {finished: 1}, function (){
-											bot.sendMessage(msg.message.chat.id, "Diccionario completado, ya puedes jugar con el!");
-											//Enviamos mensaje a los colaboradores
-											game.db.find('dictionary_collabs', {dictionary_id: r_dic._id}, function(collab_res){
-												for (var row of collab_res){
-													if (row.collab_uid != msg.message.chat.id) 
-														bot.sendMessage(row.collab_uid, "El creador ha borrado el diccionario");
-												}
-											});
-											game.db.remove('dictionary_collabs', {dictionary_id: game.db.getObjectId(r_dic._id)}, function(){});
-										});
-										
+									game.db.updateOne('dictionary_collabs', {collab_id: game.db.getObjectId(res.msg._id)}, {status: 1}, function (res){
+										var opts = {
+											chat_id: collab_res.collab_uid, 
+											message_id: collab_res.msg_id,
+											reply_markup: JSON.stringify({
+												inline_keyboard: [
+													[{text: "Dejar de añadir cartas", callback_data: "dictionary_addstop_"+r_dic._id}]
+												]
+											})
+										};
+										bot.editMessageText("Añadiendo cartas blancas, debes añadir al menos "+privatedata.minwhitecards+".", opts);
+										bot.answerCallbackQuery(msg.id, {"text": "Modo añadir cartas blancas activado."});
+									});
+								});
+							});
+						break;
+						//Add black cards
+						case "addb":
+							game.db.findOne('dictionaries', {_id: game.db.getObjectId(data[2]), finished: 0}, function(r_dic) {
+								if (!r_dic) {
+									bot.answerCallbackQuery(msg.id, {"text": "No existe el diccionario."});
+									return;
+								}
+								game.db.findOne('dictionary_collabs', {dictionary_id: r_dic._id, collab_id: res.msg._id}, function (collab_res){
+									if (!collab_res){
+										bot.answerCallbackQuery(msg.id, {"text": "No estas colaborando en este diccionario."});
+										return;
+									}
+									game.db.updateOne('dictionary_collabs', {collab_id: game.db.getObjectId(res.msg._id)}, {status: 2}, function (res){
+										var opts = {
+											chat_id: collab_res.collab_uid, 
+											message_id: collab_res.msg_id,
+											reply_markup: JSON.stringify({
+												inline_keyboard: [
+													[{text: "Dejar de añadir cartas", callback_data: "dictionary_addstop_"+r_dic._id}]
+												]
+											})
+										};
+										bot.editMessageText("Añadiendo cartas negras, debes añadir al menos "+privatedata.minblackcards+".", opts);
+										bot.answerCallbackQuery(msg.id, {"text": "Modo añadir cartas negras activado."});
+									});
+								});
+							});
+						break;
+						//Stop adding cards
+						case "addstop":
+							game.db.findOne('dictionaries', {_id: game.db.getObjectId(data[2]), finished: 0}, function(r_dic) {
+								if (!r_dic) {
+									bot.answerCallbackQuery(msg.id, {"text": "No existe el diccionario."});
+									return;
+								}
+								game.db.findOne('dictionary_collabs', {dictionary_id: r_dic._id, collab_id: res.msg._id}, function(collab_res){
+									if (!collab_res){
+										bot.answerCallbackQuery(msg.id, {"text": "No estas colaborando en este diccionario."});
+										return;
+									}
+									if (collab_res.status == 0){
+										bot.answerCallbackQuery(msg.id, {"text": "No estas agregando cartas al diccionario."});
+										return;
+									}
+									game.db.updateOne('players', {_id: game.db.getObjectId(res.msg._id)}, {status: 0}, function (res){
+										var opts = {
+											chat_id: collab_res.collab_uid, 
+											message_id: collab_res.msg_id,
+											reply_markup: JSON.stringify({
+												inline_keyboard: [
+													[{text: "Añadir cartas blancas", callback_data: "dictionary_addw_"+r_dic._id}],
+													[{text: "Añadir cartas negras", callback_data: "dictionary_addb_"+r_dic._id}]
+												]
+											})
+										};
+										bot.editMessageText("Se deben añadir al menos "+privatedata.minwhitecards+" cartas blancas y "+privatedata.minblackcards+" cartas negras para completar el diccionario:", opts);
+										bot.answerCallbackQuery(msg.id, {"text": "Modo añadir cartas desactivado."});
 									});
 								});
 							});
@@ -1101,10 +1128,10 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 			if (res.status == "ERR") {
 				switch (res.msg) {
 					case "ERR_NOT_IN_GAME":
-						bot.answerCallbackQuery(msg.id, {"text": "Debes hablar conmigo (@"+privatedata.botalias+") por privado y mandar el mensaje /start."});
+						bot.sendMessage(msg.chat.id, "Debes hablar conmigo (@"+privatedata.botalias+") por privado y mandar el mensaje /start.");
 					break;
 					default:
-						bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
+						bot.sendMessage(msg.chat.id, "Error inesperado.");
 						console.log(res);
 					break;
 				}
@@ -1120,36 +1147,45 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 					reply_markup: {force_reply: true}
 				};
 				bot.sendMessage(msg.chat.id, "Creando diccionario...\nDime el nombre que deseas ponerle:", opts).then(resp => {
-					var resp = bot.onReplyToMessage(resp.chat.id, resp.message_id, function (reply){
+					bot.onReplyToMessage(resp.chat.id, resp.message_id, function (reply){
 						//Buscamos en la tabla diccionarios si el nombre ya existe.
 						game.db.count('dictionaries', {name: reply.text}, function(n_dic) {
 							if (n_dic) {
 								bot.sendMessage(msg.chat.id, "Ya existe un diccionario con ese nombre.");
 								return;
-							}
+							}		
 							//Añadimos el diccionario a la BD
-							game.db.insertOne('dictionaries', {creator_id: res.msg._id, creator_uid: res.msg.user_id, creator_name: res.msg.username, name: reply.text, finished: 0}, function(res_dicc){
-								//Obtenemos el nombre de usuario del creador
+							game.db.insertOne('dictionaries', {creator_id: res.msg._id, creator_uid: res.msg.user_id, creator_name: res.msg.username, name: reply.text, finished: 0}, function(res_dicc){							
+								//Enviamos un mensaje con las opciones de creador
 								var opts = {
 									reply_markup: JSON.stringify({
 										inline_keyboard: [
 											[{text: "Añadir colaborador", callback_data: "dictionary_collab_"+res_dicc.insertedId}],
-											[{text: "Añadir cartas blancas", callback_data: "dictionary_addw_"+res_dicc.insertedId}],
-											[{text: "Añadir cartas negras", callback_data: "dictionary_addb_"+res_dicc.insertedId}],
 											[{text: "Completar diccionario", callback_data: "dictionary_end_"+res_dicc.insertedId}],
 											[{text: "Borrar el diccionario", callback_data: "dictionary_erase_"+res_dicc.insertedId}]
 										]
 									})
 								};
-								bot.sendMessage(msg.chat.id, "Se ha creado el diccionario ahora puedes realizar las siguientes acciones:", opts).then(resp => {
+								bot.sendMessage(msg.chat.id, "Se ha creado el diccionario ahora puedes realizar las siguientes acciones:", opts).then(dic_response => {
 									//Añadimos el ID del mensaje original
-									game.db.updateOne('dictionaries', {_id: res_dicc.insertedId}, {msg_id: resp.message_id}, function(r){
+									game.db.updateOne('dictionaries', {_id: res_dicc.insertedId}, {msg_id: dic_response.message_id}, function(r){
 										if (r.status == "ERR") {
 											callback(r);
 											return;
 										}
+									});
+									//Enviamos otro mensaje con las opciones para añadir cartas
+									var opts = {
+										reply_markup: JSON.stringify({
+											inline_keyboard: [
+												[{text: "Añadir cartas blancas", callback_data: "dictionary_addw_"+res_dicc.insertedId}],
+												[{text: "Añadir cartas negras", callback_data: "dictionary_addb_"+res_dicc.insertedId}]
+											]
+										})
+									};
+									bot.sendMessage(msg.chat.id, "Se deben añadir al menos "+privatedata.minwhitecards+" cartas blancas y "+privatedata.minblackcards+" cartas negras para completar el diccionario:", opts).then(collab_response => {
 										//Añadimos al creador como colaborador
-										game.db.insertOne('dictionary_collabs', {dictionary_id: res_dicc.insertedId, collab_id: res.msg._id, collab_uid: res.msg.user_id, collab_alias: res.msg.username}, function(res){
+										game.db.insertOne('dictionary_collabs', {msg_id: collab_response.message_id, dictionary_id: res_dicc.insertedId, collab_id: res.msg._id, collab_uid: res.msg.user_id, collab_alias: res.msg.username}, function(res){
 											if (res.status == "ERR") {
 												callback(res);
 												return;
@@ -1168,9 +1204,8 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 
 	//Si el comando es /listdicionaries
 	bot.onText(new RegExp("^\\/listdictionaries(?:@"+privatedata.botalias+")?", "i"), (msg, match) => {
-				bot.sendMessage(msg.chat.id, "Si.");
 		//Buscamos en la tabla diccionarios
-		game.db.find('dictionaries', {finished:1}, function(r_dic) {
+		game.db.findMany('dictionaries', {finished:1}, function(r_dic) {
 			if (!r_dic.length) {
 				bot.sendMessage(msg.chat.id, "No hay ningun diccionario.");
 				return;
@@ -1206,10 +1241,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 				return;
 			}
 			game.db.findOne('dictionary_collabs', {collab_id: res.msg._id}, function(collab_res) {
-				if (!collab_res){
-					bot.sendMessage(msg.chat.id, "No estas participando en ningun diccionario.");
-					return;
-				}
+				if (!collab_res) return; //No está añadiendo cartas, el mensaje se ignora.
 				if (collab_res.status == 1){ //white
 					//Buscamos en la tabla diccionarios si el nombre ya existe.
 					game.db.findOne('dictionaries', {_id: game.db.getObjectId(collab_res.dictionary_id), finished: 0}, function(r_dic) {
@@ -1219,14 +1251,9 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						}
 						//Buscamos en la tabla diccionarios si el nombre ya existe.
 						game.db.count('whitecards', {dictionary: r_dic._id}, function(n_dic) {
-							//Si hay mas de 405 cartas blancas
-							if (n_dic >= 405) {
-								bot.sendMessage(msg.chat.id, "Este diccionario ya tiene 405 cartas blancas.");
-								return;
-							}
 							game.db.insertOne('whitecards', {card_text: cardText, dictionary: r_dic._id}, function(){
 								//se le notifica por privado
-								bot.sendMessage(msg.from.id, "Se ha añadido la carta. Llevas "+(n_dic+1)+" de 405.");
+								bot.sendMessage(msg.from.id, "Se ha añadido la carta. Llevas "+(n_dic+1)+" cartas blancas.");
 								if (res.msg._id != r_dic.creator_id) 
 									bot.sendMessage(r_dic.creator_uid, msg.from.username+" ha añadido la carta blanca "+(n_dic+1)+": "+cardText);
 								
@@ -1242,20 +1269,15 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 						}
 						//Buscamos en la tabla diccionarios si el nombre ya existe.
 						game.db.count('blackcards', {dictionary: r_dic._id}, function(n_dic) {
-							//Si hay mas de 50 cartas negras
-							if (n_dic >= 50) {
-								bot.sendMessage(msg.chat.id, "Este diccionario ya tiene 50 cartas negras.");
-								return;
-							}
 							game.db.insertOne('blackcards', {card_text: cardText, dictionary: r_dic._id}, function(){
-								bot.sendMessage(msg.from.id, "Se ha añadido la carta. Llevas "+(n_dic+1)+" de 50.");
+								bot.sendMessage(msg.from.id, "Se ha añadido la carta. Llevas "+(n_dic+1)+" cartas negras.");
 								if (res.msg._id != r_dic.creator_id) 
 									bot.sendMessage(r_dic.creator_uid, msg.from.username+" ha añadido la carta negra "+(n_dic+1)+": "+cardText);
 							});
 						});
 					});
 				} else {
-					//bot.sendMessage(msg.chat.id, "No estas añadiendo cartas, el mensaje se ignorará.");
+					//No está añadiendo cartas, el mensaje se ignora.
 				}
 			});
 		});
@@ -1329,7 +1351,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 	bot.onText(new RegExp("^\\/sendMessage(?:@"+privatedata.botalias+")?\\s(.*)", "i"), (msg, match) => {
 		if (msg.chat.type == "private") {
 			if (msg.chat.id == privatedata.ownerid) {
-				game.db.find('players', {}, function(r_pla) {
+				game.db.findMany('players', {}, function(r_pla) {
 					if(r_pla.length){
 						var users = "";
 						for (i = 0; i < r_pla.length; i++){
@@ -1354,7 +1376,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 				game.db.remove('cardsxround', {});
 				game.db.remove('votesxround', {});
 				game.db.remove('votedeletexgame', {});
-				game.db.find('players', {}, function(r_pla) {
+				game.db.findMany('players', {}, function(r_pla) {
 					if(r_pla.length){
 						var users = "";
 						for (i = 0; i < r_pla.length; i++){

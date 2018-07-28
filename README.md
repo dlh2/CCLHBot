@@ -1,5 +1,5 @@
 # CCLHBot
-Bot de telegram de Cartas contra la humanidad
+Bot de Telegram del juego Cartas Contra la Humanidad (versión 0.9.0)
 
 # ToDo
 
@@ -9,7 +9,6 @@ General
 - Reducir/optimizar peticiones a bd
 
 Bot.js
-- Posibilidad de crear diccionarios de mas de 405/50 cartas
 - Posibilidad de elegir entre mas de 5 diccionarios (con paginacion) al crear una partida
 - Posibilidad de añadir "bots" a la partida
 	
