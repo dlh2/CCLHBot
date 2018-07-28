@@ -1,5 +1,7 @@
 # CCLHBot
-Bot de telegram de Cartas contra la humanidad
+Bot de telegram de Cartas contra la humanidad (@cclhbot)
+
+Puedes acceder a el desde aqui: http://t.me/cclhbot
 
 # ToDo
 
