@@ -322,7 +322,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 										return;
 									}
 									//Modifica el juego para incluir el diccionario
-									game.modifyGame(g_res._id, {dictionary: dictionary_res._id, currentblack: 0, status: 0}, function(game_res){
+									game.modifyGame(g_res._id, {dictionary_id: dictionary_res._id, currentblack: 0, status: 0}, function(game_res){
 										//Capturamos errores
 										if (game_res.status == "ERR") {
 											switch (game_res.msg) {
@@ -337,7 +337,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 											return;
 										}
 										bot.answerCallbackQuery(msg.id, {"text": "Seleccionado " + dictionary_res.name + " como diccionario de cartas."});
-										game.db.findMany('blackcards', {dictionary: dictionary_res._id}, function (array){
+										game.db.findMany('blackcards', {dictionary_id: dictionary_res._id}, function (array){
 											array = game.shuffleArray(array);
 											newarray = [];
 											for (i = 0; i < array.length; i++){
@@ -479,7 +479,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 							return;
 						}
 						//Guardamos las cartas
-						game.db.findMany('whitecards', {dictionary: game_res.msg.game.dictionary}, function (array){
+						game.db.findMany('whitecards', {dictionary_id: game_res.msg.game.dictionary_id}, function (array){
 							var cards_per_player = parseInt(game_res.msg.game.n_players) * privatedata.cardsperround;
 							array = game.shuffleArray(array).slice(0, cards_per_player * parseInt(game_res.msg.game.n_cardstowin));
 							var newarray = [];
@@ -965,12 +965,12 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									bot.answerCallbackQuery(msg.id, {"text": "No existe el dicionario."});
 									return;
 								}
-								game.db.count('blackcards', {dictionary: r_dic._id}, function(bca) {
+								game.db.count('blackcards', {dictionary_id: r_dic._id}, function(bca) {
 									if (bca < privatedata.minblackcards){
 										bot.answerCallbackQuery(msg.id, {"text": "Aun no se ha completado el diccionario de cartas negras."});
 										return;
 									}
-									game.db.count('whitecards', {dictionary: r_dic._id}, function(wca) {
+									game.db.count('whitecards', {dictionary_id: r_dic._id}, function(wca) {
 										if (wca < privatedata.minwhitecards){
 											bot.answerCallbackQuery(msg.id, {"text": "Aun no se ha completado el diccionario de cartas blancas."});
 											return;
@@ -1011,8 +1011,8 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									});
 									//Borramos los colaboradores y las cartas
 									game.db.remove('dictionary_collabs', {dictionary_id: r_dic._id});
-									game.db.remove('whitecards', {dictionary: r_dic._id});
-									game.db.remove('blackcards', {dictionary: r_dic._id});
+									game.db.remove('whitecards', {dictionary_id: r_dic._id});
+									game.db.remove('blackcards', {dictionary_id: r_dic._id});
 									//Editamos el mensaje principal
 									bot.editMessageText("Se ha borrado el diccionario.", {chat_id: r_dic.creator_uid, message_id: r_dic.msg_id});
 									bot.answerCallbackQuery(msg.id, {"text": "Diccionario borrado."});
@@ -1116,6 +1116,23 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 			}
 		});
 	});
+
+	//Si el comando es /listdicionaries
+	bot.onText(new RegExp("^\\/listdictionaries(?:@"+privatedata.botalias+")?", "i"), (msg, match) => {
+		//Buscamos en la tabla diccionarios
+		game.db.findMany('dictionaries', {finished:1}, function(r_dic) {
+			if (!r_dic.length) {
+				bot.sendMessage(msg.chat.id, "No hay ningun diccionario.");
+				return;
+			}
+			var text = "";
+			for (i=0; i< r_dic.length; i++){
+				text += r_dic[i].name+" de "+r_dic[i].creator_name+"\n";
+			}
+			bot.sendMessage(msg.chat.id, "Puedes usar cualquiera de estos diccionarios: \n"+text);
+		});
+	});
+	
 	//Si el comando es /newdictionary
 	bot.onText(new RegExp("^\\/newdictionary(?:@"+privatedata.botalias+")?", "i"), (msg, match) => { 
 		//Detectamos si el mensaje recibido es por privado
@@ -1202,22 +1219,6 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 		});
 	});
 
-	//Si el comando es /listdicionaries
-	bot.onText(new RegExp("^\\/listdictionaries(?:@"+privatedata.botalias+")?", "i"), (msg, match) => {
-		//Buscamos en la tabla diccionarios
-		game.db.findMany('dictionaries', {finished:1}, function(r_dic) {
-			if (!r_dic.length) {
-				bot.sendMessage(msg.chat.id, "No hay ningun diccionario.");
-				return;
-			}
-			var text = "";
-			for (i=0; i< r_dic.length; i++){
-				text += r_dic[i].name+" de "+r_dic[i].creator_name+"\n";
-			}
-			bot.sendMessage(msg.chat.id, "Puedes usar cualquiera de estos diccionarios: \n"+text);
-		});
-	});
-
 	//Add cards (si el comando no empieza por /)
 	bot.onText(new RegExp("^(?!\/).+", "i"), (msg, match) => {
 		//Detectamos si el mensaje recibido es por privado
@@ -1250,8 +1251,8 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 							return;
 						}
 						//Buscamos en la tabla diccionarios si el nombre ya existe.
-						game.db.count('whitecards', {dictionary: r_dic._id}, function(n_dic) {
-							game.db.insertOne('whitecards', {card_text: cardText, dictionary: r_dic._id}, function(){
+						game.db.count('whitecards', {dictionary_id: r_dic._id}, function(n_dic) {
+							game.db.insertOne('whitecards', {card_text: cardText, dictionary_id: r_dic._id}, function(){
 								//se le notifica por privado
 								bot.sendMessage(msg.from.id, "Se ha añadido la carta. Llevas "+(n_dic+1)+" cartas blancas.");
 								if (res.msg._id != r_dic.creator_id) 
@@ -1268,8 +1269,8 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 							return;
 						}
 						//Buscamos en la tabla diccionarios si el nombre ya existe.
-						game.db.count('blackcards', {dictionary: r_dic._id}, function(n_dic) {
-							game.db.insertOne('blackcards', {card_text: cardText, dictionary: r_dic._id}, function(){
+						game.db.count('blackcards', {dictionary_id: r_dic._id}, function(n_dic) {
+							game.db.insertOne('blackcards', {card_text: cardText, dictionary_id: r_dic._id}, function(){
 								bot.sendMessage(msg.from.id, "Se ha añadido la carta. Llevas "+(n_dic+1)+" cartas negras.");
 								if (res.msg._id != r_dic.creator_id) 
 									bot.sendMessage(r_dic.creator_uid, msg.from.username+" ha añadido la carta negra "+(n_dic+1)+": "+cardText);
