@@ -369,9 +369,6 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 											//Capturamos errores
 											if (player_res.status == "ERR") {
 												switch (player_res.msg) {
-													case "ERR_ALREADY_CREATING":
-														//None
-													break;
 													default:
 														bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
 														console.log(player_res);
@@ -418,6 +415,9 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 								break;
 								case "ERR_ALREADY_CREATING":
 									bot.answerCallbackQuery(msg.id, {"text": "No puedes unirte la partida, estas creando otra partida."});
+								break;
+								case "ERR_STILL_CREATING":
+									bot.answerCallbackQuery(msg.id, {"text": "La partida aun no está lista."});
 								break;
 								default:
 									bot.answerCallbackQuery(msg.id, {"text": "Error inesperado."});
@@ -803,7 +803,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 									}, 300);
 								} else { //No ha terminado la partida
 									//Iniciamos la siguiente ronda
-									game.startRound(resp.msg.game, res.data.players, function (user_id, blackcard, cards_array, cards_string){
+									game.startRound(resp.data.game, res.data.players, function (user_id, blackcard, cards_array, cards_string){
 										var optsarray = [];
 										for (var card of cards_array){
 											optsarray.push([{text: card.text, callback_data: "card_"+data[1]+"_"+card.id}]);
@@ -824,7 +824,7 @@ var game = new GameBot(privatedata.url, privatedata.db, function (res){
 										}
 										bot.sendMessage(res.data.game.room_id, "La carta negra de esta ronda es: \n"+r_res.data.blackcard);
 										if (r_res.data.game_type == "clasico") {
-											game.getUser(resp.msg.game.president_id, function (u_res){
+											game.getUser(resp.data.game.president_id, function (u_res){
 												//Capturamos errores
 												if (u_res.status == "ERR") {
 													switch (u_res.msg) {

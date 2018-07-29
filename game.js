@@ -149,7 +149,10 @@ method.joinGame = function(data, callback){
 			return;
 		}
 		//Comprobamos que la partida no esté iniciada
-		if (parseInt(r_game.status) != 0){
+		if (parseInt(r_game.status) < 0){
+			callback({status: "ERR", msg: "ERR_STILL_CREATING"});
+			return;
+		} else if (parseInt(r_game.status) > 0){
 			callback({status: "ERR", msg: "ERR_ALREADY_STARTED"});
 			return;
 		}
@@ -159,7 +162,7 @@ method.joinGame = function(data, callback){
 				return;
 			}
 			//Buscamos en la tabla games si el grupo desde el que se invoca tiene ya una partida.
-			g_object.db.count('games', {creator_id: data.player_id}, function(count_games) {
+			g_object.db.count('games', {creator_id: data.player_id, _id: {'$ne': r_game._id}}, function(count_games) {
 				//Si hay partida en este grupo
 				if (count_games) {
 					callback({status: "ERR", msg: "ERR_ALREADY_CREATING"});
@@ -174,14 +177,10 @@ method.joinGame = function(data, callback){
 					//Añadimos un contador para el orden de entrada
 					data.order = count_players+1;
 					//Insertamos en la base de datos
-					g_object.db.insertOne('playersxgame', data, function(){
-						if (count_players+1 == r_game.n_players){ //Cuando ya han entrado todos los jugadores
-							g_object.db.updateOne('games', {_id: g_object.db.getObjectId(data.game_id)}, {status: 1}, function (res) {
-								if (res.status == "ERR"){
-									callback({status: "ERR", msg: res});
-									return;
-								}
-							});
+					g_object.db.insertOne('playersxgame', data, function(res){
+						if (res.status == "ERR") {
+							callback(res);
+							return;
 						}
 						callback({status: "OK"});
 					});
@@ -207,19 +206,19 @@ method.startGame = function (player_id, game_id, callback){
 			return;
 		}
 		//Comprobamos
-		if (parseInt(r_game.status) == -1){
+		if (parseInt(r_game.status) < 0){
 			callback({status: "ERR", msg: "ERR_STILL_CREATING"});
 			return;
-		} else if (parseInt(r_game.status) == 2){
+		} else if (parseInt(r_game.status) > 0){
 			callback({status: "ERR", msg: "ERR_ALREADY_STARTED"});
 			return;
 		}
 		g_object.db.findMany('playersxgame', {game_id: g_object.db.getObjectId(game_id)}, function(r_players){
-			if (parseInt(r_game.status) == 0){
+			if (r_players.length != r_game.n_players){
 				callback({status: "ERR", msg: "ERR_NOT_ENOUGHT_PLAYERS", extra: {current_players: r_players.length, max_players: r_game.n_players}});
 				return;
 			}
-			g_object.db.updateOne('games', {_id: g_object.db.getObjectId(game_id)}, {status: 2}, function () {
+			g_object.db.updateOne('games', {_id: g_object.db.getObjectId(game_id)}, {status: 1}, function () {
 				callback({status: "OK", msg: {game: r_game, players: r_players}});
 			});
 		});
@@ -397,7 +396,7 @@ method.sendCard = function (player_id, game_id, card_id, callback) {
 				callback({status: "ERR", msg: "ERR_GAME_DELETED"});
 				return;
 			}
-			if (r_game.status != 2){
+			if (r_game.status != 1){
 				callback({status: "ERR", msg: "ERR_GAME_NOT_STARTED"});
 				return;
 			}
@@ -420,7 +419,7 @@ method.sendCard = function (player_id, game_id, card_id, callback) {
 							callback({status: "ERR", msg: "ERR_CARD_ALREADY_USED"});
 							return;
 						}
-						g_object.db.limitFind('bcardsxgame', {game_order: (parseInt(r_game.currentblack)), game_id: g_object.db.getObjectId(game_id)}, 1, function (bcard){
+						g_object.db.findOne('bcardsxgame', {game_order: (parseInt(r_game.currentblack)), game_id: g_object.db.getObjectId(game_id)}, function (bcard){
 							if (!bcard){
 								callback({status: "ERR", msg: "ERR_UNEXPECTED_BCARD"});
 								return;
@@ -431,7 +430,7 @@ method.sendCard = function (player_id, game_id, card_id, callback) {
 									if ((r_game.type=="dictadura" && n_cards+1 < r_game.n_players-1) || 
 										(r_game.type=="clasico" && n_cards+1 < r_game.n_players-1) || 
 										(r_game.type=="democracia" && n_cards+1 < r_game.n_players)){
-											callback({status: "OK", data: {status: "NORMAL",  wcard_text: r_card.card_text, blackcard: bcard.card_text}});
+											callback({status: "OK", data: {status: "NORMAL", wcard_text: r_card.card_text, blackcard: bcard.card_text}});
 										}
 									else if ((r_game.type=="dictadura" && n_cards+1 == r_game.n_players-1) || 
 										(r_game.type=="clasico" && n_cards+1 == r_game.n_players-1) || 
@@ -484,7 +483,7 @@ method.sendVote = function (player_id, game_id, card_id, callback) {
 				callback({status: "ERR", msg: "ERR_GAME_DELETED"});
 				return;
 			}
-			if (r_game.status != 2){
+			if (r_game.status != 1){
 				callback({status: "ERR", msg: "ERR_GAME_NOT_STARTED"});
 				return;
 			}
@@ -555,7 +554,7 @@ method.checkCards = function (game_id, callback){
 			callback({status: "ERR", msg: "ERR_NO_ACTIVE_GAMES"});
 			return;
 		}
-		if (parseInt(r_game.status != 2)){
+		if (parseInt(r_game.status != 1)){
 			callback({status: "ERR", msg: "ERR_GAME_NOT_STARTED"});
 			return;
 		}
@@ -590,7 +589,7 @@ method.checkVotes = function (game_id, callback){
 			callback({status: "ERR", msg: "ERR_NO_ACTIVE_GAMES"});
 			return;
 		}
-		if (parseInt(r_game.status != 2)){
+		if (parseInt(r_game.status != 1)){
 			callback({status: "ERR", msg: "ERR_GAME_NOT_STARTED"});
 			return;
 		}
