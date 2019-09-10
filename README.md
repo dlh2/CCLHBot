@@ -1,4 +1,4 @@
-# CCLHBot
+# [Deprecated] CCLHBot
 
 Bot de Telegram del juego Cartas Contra la Humanidad (versión 0.9.0)
 
